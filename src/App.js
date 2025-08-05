@@ -378,23 +378,14 @@ const GiveawayApp = () => {
   };
 
   const handleCreateGiveaway = () => {
-    // Проверяем, есть ли демо-данные, и удаляем их только при создании первого реального розыгрыша
-    const hasDemo = giveaways.some(g => g.isDemo);
-    const realGiveaways = giveaways.filter(g => !g.isDemo);
-    
     if (formData.category === 'Премиум') {
-      // Переносим текущий премиум розыгрыш в обычные
-      const currentPremium = {
-        ...premiumGiveaway,
-        id: Date.now(),
-        category: 'Обычный'
-      };
-      
-      // Если есть демо-данные, заменяем их на реальные розыгрыши
-      if (hasDemo) {
-        setGiveaways([...realGiveaways, currentPremium]);
-        localStorage.setItem('wingather_demo_deleted', 'true');
-      } else {
+      // Переносим текущий премиум розыгрыш в обычные, если он активен
+      if (premiumGiveaway.isActive) {
+        const currentPremium = {
+          ...premiumGiveaway,
+          id: Date.now(),
+          category: 'Обычный'
+        };
         setGiveaways(prev => [...prev, currentPremium]);
       }
       
@@ -412,14 +403,14 @@ const GiveawayApp = () => {
         participants: 0,
         participantIds: []
       };
-      
-      // Если есть демо-данные, заменяем их на реальные розыгрыши
-      if (hasDemo) {
-        setGiveaways([...realGiveaways, newGiveaway]);
-        localStorage.setItem('wingather_demo_deleted', 'true');
-      } else {
-        setGiveaways(prev => [...prev, newGiveaway]);
-      }
+      setGiveaways(prev => [...prev, newGiveaway]);
+    }
+    
+    // Автоматически удаляем демо-данные при создании первого реального розыгрыша
+    const hasDemo = giveaways.some(g => g.isDemo);
+    if (hasDemo) {
+      localStorage.setItem('wingather_demo_deleted', 'true');
+      setGiveaways(prev => prev.filter(g => !g.isDemo));
     }
     
     resetForm();
