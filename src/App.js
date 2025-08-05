@@ -127,46 +127,51 @@ const GiveawayApp = () => {
     return hashedPassword === '8f9e4c2a' || inputPassword === 'Molokokupilamur@shk1ns-!'; // Дублируем для совместимости
   };
 
-  // Функция для инициализации демо-данных (только для первого запуска)
+  // Функция для инициализации демо-данных (только если нет реальных розыгрышей)
   const initializeDemoData = () => {
-    const hasInitialized = localStorage.getItem('wingather_demo_initialized');
-    if (!hasInitialized && giveaways.length === 0) {
+    // Проверяем, были ли демо-данные явно удалены админом или есть ли уже реальные розыгрыши
+    const demoDeleted = localStorage.getItem('wingather_demo_deleted');
+    const hasRealGiveaways = giveaways.some(g => !g.isDemo);
+    
+    // Создаем демо только если их не удаляли И нет реальных розыгрышей И массив пустой
+    if (!demoDeleted && !hasRealGiveaways && giveaways.length === 0) {
       const demoGiveaways = [
         {
-          id: Date.now() + 1,
+          id: 'demo_iphone_' + Date.now(),
           title: 'iPhone 15 Pro (ДЕМО)',
           description: 'Демонстрационный розыгрыш - можно удалить в админ-панели',
           socialNetwork: 'Telegram',
           socialLink: 'https://t.me/example',
-          endDate: '2025-08-15',
-          participants: 0,
+          endDate: '2025-12-15',
+          participants: 42,
           participantIds: [],
           isActive: true,
-          category: 'VIP'
+          category: 'VIP',
+          isDemo: true
         },
         {
-          id: Date.now() + 2,
+          id: 'demo_ps5_' + Date.now(),
           title: 'PlayStation 5 (ДЕМО)',
           description: 'Демонстрационный розыгрыш - можно удалить в админ-панели',
           socialNetwork: 'VK',
           socialLink: 'https://vk.com/example',
-          endDate: '2025-08-20',
-          participants: 0,
+          endDate: '2025-12-20',
+          participants: 78,
           participantIds: [],
           isActive: true,
-          category: 'Обычный'
+          category: 'Обычный',
+          isDemo: true
         }
       ];
       
       setGiveaways(demoGiveaways);
-      localStorage.setItem('wingather_demo_initialized', 'true');
     }
   };
 
-  // Инициализация демо-данных при первом запуске
+  // Инициализация демо-данных при загрузке
   useEffect(() => {
     initializeDemoData();
-  }, []);
+  }, [giveaways]);
 
   // Функции для модальных окон
   const showModal = (type, title, message, onConfirm = null, onCancel = null) => {
@@ -435,9 +440,30 @@ const GiveawayApp = () => {
       'Подтверждение удаления',
       `Удалить розыгрыш "${giveaway?.title}"? Это действие нельзя отменить.`,
       () => {
+        // Если удаляем демо-розыгрыш, отмечаем что демо-данные удалены
+        if (giveaway?.isDemo) {
+          localStorage.setItem('wingather_demo_deleted', 'true');
+        }
+        
         setGiveaways(prev => prev.filter(g => g.id !== id));
         hideModal();
         showModal('success', 'Розыгрыш удален', 'Розыгрыш успешно удален из системы');
+      },
+      hideModal
+    );
+  };
+
+  // Функция для быстрого удаления всех демо-розыгрышей
+  const clearDemoGiveaways = () => {
+    showModal(
+      'confirm',
+      'Удалить демо-розыгрыши',
+      'Удалить все демонстрационные розыгрыши? Останутся только ваши реальные розыгрыши.',
+      () => {
+        localStorage.setItem('wingather_demo_deleted', 'true');
+        setGiveaways(prev => prev.filter(g => !g.isDemo));
+        hideModal();
+        showModal('success', 'Демо удалены', 'Все демонстрационные розыгрыши удалены');
       },
       hideModal
     );
@@ -974,10 +1000,20 @@ const GiveawayApp = () => {
               <div className="lg:col-span-2">
                 <div className="bg-gradient-to-b from-slate-800/50 to-slate-900/50 backdrop-blur-sm border border-slate-700/50 rounded-2xl overflow-hidden h-[600px] flex flex-col">
                   <div className="p-4 border-b border-slate-700/50 flex-shrink-0">
-                    <h2 className="text-lg font-bold text-white flex items-center">
-                      <span className="w-2 h-2 bg-blue-500 rounded-full mr-3"></span>
-                      Все розыгрыши ({giveaways.length + 1})
-                    </h2>
+                    <div className="flex items-center justify-between">
+                      <h2 className="text-lg font-bold text-white flex items-center">
+                        <span className="w-2 h-2 bg-blue-500 rounded-full mr-3"></span>
+                        Все розыгрыши ({giveaways.length + 1})
+                      </h2>
+                      {giveaways.some(g => g.isDemo) && (
+                        <button
+                          onClick={clearDemoGiveaways}
+                          className="text-xs bg-gradient-to-r from-red-600 to-red-700 text-white px-3 py-1 rounded-lg hover:from-red-700 hover:to-red-800 transition-all duration-200"
+                        >
+                          Очистить демо
+                        </button>
+                      )}
+                    </div>
                   </div>
                   <div className="flex-1 overflow-y-auto">
                     <div className="divide-y divide-slate-700/50">
@@ -1077,7 +1113,7 @@ const GiveawayApp = () => {
                                 onClick={() => handleDeleteGiveaway(giveaway.id)}
                                 className="bg-gradient-to-r from-red-600 to-red-700 text-white px-2 py-1 rounded-lg text-xs hover:from-red-700 hover:to-red-800 transition-all duration-200"
                               >
-                                Уд.
+                                {giveaway.isDemo ? 'Удалить ДЕМО' : 'Уд.'}
                               </button>
                             </div>
                           </div>
