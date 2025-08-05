@@ -129,12 +129,11 @@ const GiveawayApp = () => {
 
   // Функция для инициализации демо-данных (только если нет реальных розыгрышей)
   const initializeDemoData = () => {
-    // Проверяем, были ли демо-данные явно удалены админом или есть ли уже реальные розыгрыши
+    // Проверяем, были ли демо-данные явно удалены админом
     const demoDeleted = localStorage.getItem('wingather_demo_deleted');
-    const hasRealGiveaways = giveaways.some(g => !g.isDemo);
     
-    // Создаем демо только если их не удаляли И нет реальных розыгрышей И массив пустой
-    if (!demoDeleted && !hasRealGiveaways && giveaways.length === 0) {
+    // Создаем демо только если их не удаляли И массив ПОЛНОСТЬЮ пустой
+    if (!demoDeleted && giveaways.length === 0) {
       const demoGiveaways = [
         {
           id: 'demo_iphone_' + Date.now(),
@@ -168,10 +167,10 @@ const GiveawayApp = () => {
     }
   };
 
-  // Инициализация демо-данных при загрузке
+  // Инициализация демо-данных при загрузке (только один раз)
   useEffect(() => {
     initializeDemoData();
-  }, [giveaways]);
+  }, []); // Убрали зависимость от giveaways!
 
   // Функции для модальных окон
   const showModal = (type, title, message, onConfirm = null, onCancel = null) => {
@@ -379,6 +378,9 @@ const GiveawayApp = () => {
   };
 
   const handleCreateGiveaway = () => {
+    // Автоматически удаляем демо-данные при создании первого реального розыгрыша
+    const currentGiveaways = giveaways.filter(g => !g.isDemo);
+    
     if (formData.category === 'Премиум') {
       // Переносим текущий премиум розыгрыш в обычные
       const currentPremium = {
@@ -386,7 +388,7 @@ const GiveawayApp = () => {
         id: Date.now(),
         category: 'Обычный'
       };
-      setGiveaways(prev => [...prev, currentPremium]);
+      setGiveaways([...currentGiveaways, currentPremium]);
       
       // Устанавливаем новый премиум розыгрыш
       setPremiumGiveaway({
@@ -402,8 +404,11 @@ const GiveawayApp = () => {
         participants: 0,
         participantIds: []
       };
-      setGiveaways(prev => [...prev, newGiveaway]);
+      setGiveaways([...currentGiveaways, newGiveaway]);
     }
+    
+    // Отмечаем что демо-данные удалены
+    localStorage.setItem('wingather_demo_deleted', 'true');
     resetForm();
   };
 
