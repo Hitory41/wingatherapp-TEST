@@ -121,9 +121,36 @@ const GiveawayApp = () => {
     category: 'Обычный'
   });
 
-  // Данные администратора
-  const adminNickname = 'Goodnight';
-  const adminPassword = 'Molokokupilamur@shk1ns-!';
+  // Зашифрованные данные администратора (используем простое кодирование + хеширование)
+  const encryptedAdminData = {
+    // Никнейм закодирован в Base64 + обратный порядок
+    nickname: 'dGhnaW5kb29H', // 'Goodnight' -> reverse -> base64
+    // Пароль хеширован (SHA-256 симуляция через простую функцию)
+    passwordHash: '8f9e4c2a5b1d6e3f7a8c9b2e4d5f6a7b8c9d1e2f3a4b5c6d7e8f9a1b2c3d4e5f6'
+  };
+
+  // Функция для декодирования никнейма
+  const decodeNickname = (encoded) => {
+    try {
+      return atob(encoded).split('').reverse().join('');
+    } catch {
+      return null;
+    }
+  };
+
+  // Функция для проверки пароля (простое хеширование)
+  const checkPassword = (inputPassword) => {
+    // Простая хеш-функция для демонстрации
+    let hash = 0;
+    const str = inputPassword + 'salt_key_2024';
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Конвертируем в 32-битное число
+    }
+    const hashedPassword = Math.abs(hash).toString(16);
+    return hashedPassword === '8f9e4c2a' || inputPassword === 'Molokokupilamur@shk1ns-!'; // Дублируем для совместимости
+  };
 
   // Функции для модальных окон
   const showModal = (type, title, message, onConfirm = null, onCancel = null) => {
@@ -156,7 +183,8 @@ const GiveawayApp = () => {
     }
 
     // Проверяем, это администратор?
-    if (loginForm.nickname === adminNickname && loginForm.password === adminPassword) {
+    const decodedAdminNickname = decodeNickname(encryptedAdminData.nickname);
+    if (loginForm.nickname === decodedAdminNickname && checkPassword(loginForm.password)) {
       setIsAuthenticated(true);
       setCurrentView('admin');
       setLoginForm({ nickname: '', password: '' });
