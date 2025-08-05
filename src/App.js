@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import './App.css';
+import { giveawayAPI, premiumAPI, participantAPI, userAPI } from './supabaseClient';
 
-// Замена для hatch.useStoredState
+// Замена для hatch.useStoredState (теперь только для локальных настроек)
 const useStoredState = (key, defaultValue) => {
   const [value, setValue] = useState(() => {
     try {
@@ -48,9 +49,8 @@ const GiveawayApp = () => {
 
   const user = useUser();
 
-  const [giveaways, setGiveaways] = useStoredState('giveaways', []);
-
-  const [premiumGiveaway, setPremiumGiveaway] = useStoredState('premiumGiveaway', {
+  const [giveaways, setGiveaways] = useState([]);
+  const [premiumGiveaway, setPremiumGiveaway] = useState({
     id: 'premium',
     title: 'Создайте премиум розыгрыш',
     description: 'Здесь будет отображаться ваш премиум розыгрыш',
@@ -62,6 +62,9 @@ const GiveawayApp = () => {
     isActive: false,
     category: 'Премиум'
   });
+
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   
   const [currentView, setCurrentView] = useState('public');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -127,50 +130,59 @@ const GiveawayApp = () => {
     return hashedPassword === '8f9e4c2a' || inputPassword === 'Molokokupilamur@shk1ns-!'; // Дублируем для совместимости
   };
 
-  // Функция для инициализации демо-данных (только если нет реальных розыгрышей)
-  const initializeDemoData = () => {
-    // Проверяем, были ли демо-данные явно удалены админом
-    const demoDeleted = localStorage.getItem('wingather_demo_deleted');
-    
-    // Создаем демо только если их не удаляли И массив ПОЛНОСТЬЮ пустой
-    if (!demoDeleted && giveaways.length === 0) {
-      const demoGiveaways = [
-        {
-          id: 'demo_iphone_' + Date.now(),
-          title: 'iPhone 15 Pro (ДЕМО)',
-          description: 'Демонстрационный розыгрыш - можно удалить в админ-панели',
-          socialNetwork: 'Telegram',
-          socialLink: 'https://t.me/example',
-          endDate: '2025-12-15',
-          participants: 42,
-          participantIds: [],
-          isActive: true,
-          category: 'VIP',
-          isDemo: true
-        },
-        {
-          id: 'demo_ps5_' + Date.now(),
-          title: 'PlayStation 5 (ДЕМО)',
-          description: 'Демонстрационный розыгрыш - можно удалить в админ-панели',
-          socialNetwork: 'VK',
-          socialLink: 'https://vk.com/example',
-          endDate: '2025-12-20',
-          participants: 78,
-          participantIds: [],
-          isActive: true,
-          category: 'Обычный',
-          isDemo: true
-        }
-      ];
+  // Загрузка данных из базы данных
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
       
-      setGiveaways(demoGiveaways);
+      // Загружаем обычные розыгрыши
+      const giveawaysData = await giveawayAPI.getAll();
+      
+      // Преобразуем данные из БД в формат приложения
+      const formattedGiveaways = giveawaysData.map(g => ({
+        id: g.id,
+        title: g.title,
+        description: g.description,
+        socialNetwork: g.social_network,
+        socialLink: g.social_link,
+        endDate: g.end_date,
+        participants: g.participants_count,
+        participantIds: [], // Будем получать отдельно при необходимости
+        isActive: g.is_active,
+        category: g.category,
+        isDemo: g.title.includes('(ДЕМО)')
+      }));
+      
+      setGiveaways(formattedGiveaways);
+      
+      // Загружаем премиум розыгрыш
+      const premiumData = await premiumAPI.get();
+      setPremiumGiveaway({
+        id: 'premium',
+        title: premiumData.title,
+        description: premiumData.description,
+        socialNetwork: premiumData.social_network,
+        socialLink: premiumData.social_link,
+        endDate: premiumData.end_date,
+        participants: premiumData.participants_count,
+        participantIds: [], // Будем получать отдельно при необходимости
+        isActive: premiumData.is_active,
+        category: 'Премиум'
+      });
+      
+    } catch (err) {
+      console.error('Ошибка загрузки данных:', err);
+      setError('Ошибка подключения к базе данных');
+    } finally {
+      setLoading(false);
     }
   };
 
-  // Инициализация демо-данных при загрузке (только один раз)
+  // Загрузка данных при монтировании компонента
   useEffect(() => {
-    initializeDemoData();
-  }, []); // Убрали зависимость от giveaways!
+    loadData();
+  }, []);
 
   // Функции для модальных окон
   const showModal = (type, title, message, onConfirm = null, onCancel = null) => {
@@ -278,7 +290,7 @@ const GiveawayApp = () => {
     setCurrentView('public');
   };
 
-  const handleParticipate = (id) => {
+  const handleParticipate = async (id) => {
     // Проверяем авторизацию (локальный пользователь или Hatch пользователь)
     const currentUser = localUser || user;
     if (!currentUser || !currentUser.id) {
@@ -294,126 +306,182 @@ const GiveawayApp = () => {
       return;
     }
 
-    if (id === 'premium') {
-      // Проверяем, участвует ли пользователь уже
-      if (premiumGiveaway.participantIds.includes(currentUser.id)) {
-        showModal('error', 'Уже участвуете', 'Вы уже участвуете в этом розыгрыше!');
-        return;
-      }
-      
-      setPremiumGiveaway(prev => ({ 
-        ...prev, 
-        participants: prev.participants + 1,
-        participantIds: [...prev.participantIds, currentUser.id]
-      }));
-      
-      // Сохраняем участие в локальном профиле и в общем хранилище
-      if (localUser) {
-        const updatedUser = {
-          ...localUser,
-          participations: [...(localUser.participations || []), {
-            giveawayId: 'premium',
-            giveawayTitle: premiumGiveaway.title,
-            date: new Date().toISOString()
-          }]
-        };
+    try {
+      if (id === 'premium') {
+        // Проверяем, участвует ли пользователь уже
+        const alreadyParticipating = await participantAPI.checkParticipation(currentUser.id, null, true);
+        if (alreadyParticipating) {
+          showModal('error', 'Уже участвуете', 'Вы уже участвуете в этом розыгрыше!');
+          return;
+        }
         
-        setLocalUser(updatedUser);
+        // Добавляем участника в БД
+        await participantAPI.addToPremium(currentUser.id, currentUser.name || currentUser.nickname);
         
-        // Обновляем в общем хранилище профилей
-        const userKey = localUser.nickname.toLowerCase();
-        setUserProfiles(prev => ({
-          ...prev,
-          [userKey]: updatedUser
+        // Увеличиваем счетчик
+        await premiumAPI.incrementParticipants();
+        
+        // Обновляем локальное состояние
+        setPremiumGiveaway(prev => ({ 
+          ...prev, 
+          participants: prev.participants + 1
         }));
-      }
-      
-      showModal('success', 'Участие подтверждено!', 'Вы участвуете в премиум розыгрыше! Удачи!');
-      if (premiumGiveaway.socialLink) {
-        window.open(premiumGiveaway.socialLink, '_blank');
-      }
-    } else {
-      const giveaway = giveaways.find(g => g.id === id);
-      
-      // Проверяем, участвует ли пользователь уже
-      if (giveaway && giveaway.participantIds.includes(currentUser.id)) {
-        showModal('error', 'Уже участвуете', 'Вы уже участвуете в этом розыгрыше!');
-        return;
-      }
-      
-      setGiveaways(prev => prev.map(g => 
-        g.id === id ? { 
-          ...g, 
-          participants: g.participants + 1,
-          participantIds: [...g.participantIds, currentUser.id]
-        } : g
-      ));
-      
-      // Сохраняем участие в локальном профиле и в общем хранилище
-      if (localUser) {
-        const updatedUser = {
-          ...localUser,
-          participations: [...(localUser.participations || []), {
-            giveawayId: id,
-            giveawayTitle: giveaway.title,
-            date: new Date().toISOString()
-          }]
-        };
         
-        setLocalUser(updatedUser);
+        // Сохраняем участие в локальном профиле
+        if (localUser) {
+          const updatedUser = {
+            ...localUser,
+            participations: [...(localUser.participations || []), {
+              giveawayId: 'premium',
+              giveawayTitle: premiumGiveaway.title,
+              date: new Date().toISOString()
+            }]
+          };
+          
+          setLocalUser(updatedUser);
+          
+          // Обновляем в общем хранилище профилей
+          const userKey = localUser.nickname.toLowerCase();
+          setUserProfiles(prev => ({
+            ...prev,
+            [userKey]: updatedUser
+          }));
+        }
         
-        // Обновляем в общем хранилище профилей
-        const userKey = localUser.nickname.toLowerCase();
-        setUserProfiles(prev => ({
-          ...prev,
-          [userKey]: updatedUser
-        }));
+        showModal('success', 'Участие подтверждено!', 'Вы участвуете в премиум розыгрыше! Удачи!');
+        if (premiumGiveaway.socialLink) {
+          window.open(premiumGiveaway.socialLink, '_blank');
+        }
+      } else {
+        const giveaway = giveaways.find(g => g.id === id);
+        if (!giveaway) return;
+        
+        // Проверяем, участвует ли пользователь уже
+        const alreadyParticipating = await participantAPI.checkParticipation(currentUser.id, id, false);
+        if (alreadyParticipating) {
+          showModal('error', 'Уже участвуете', 'Вы уже участвуете в этом розыгрыше!');
+          return;
+        }
+        
+        // Добавляем участника в БД
+        await participantAPI.addToGiveaway(currentUser.id, currentUser.name || currentUser.nickname, id);
+        
+        // Увеличиваем счетчик
+        await giveawayAPI.incrementParticipants(id);
+        
+        // Обновляем локальное состояние
+        setGiveaways(prev => prev.map(g => 
+          g.id === id ? { 
+            ...g, 
+            participants: g.participants + 1
+          } : g
+        ));
+        
+        // Сохраняем участие в локальном профиле
+        if (localUser) {
+          const updatedUser = {
+            ...localUser,
+            participations: [...(localUser.participations || []), {
+              giveawayId: id,
+              giveawayTitle: giveaway.title,
+              date: new Date().toISOString()
+            }]
+          };
+          
+          setLocalUser(updatedUser);
+          
+          // Обновляем в общем хранилище профилей
+          const userKey = localUser.nickname.toLowerCase();
+          setUserProfiles(prev => ({
+            ...prev,
+            [userKey]: updatedUser
+          }));
+        }
+        
+        showModal('success', 'Участие подтверждено!', `Вы участвуете в розыгрыше "${giveaway.title}"! Удачи!`);
+        if (giveaway.socialLink) {
+          window.open(giveaway.socialLink, '_blank');
+        }
       }
-      
-      showModal('success', 'Участие подтверждено!', `Вы участвуете в розыгрыше "${giveaway.title}"! Удачи!`);
-      if (giveaway && giveaway.socialLink) {
-        window.open(giveaway.socialLink, '_blank');
-      }
+    } catch (err) {
+      console.error('Ошибка участия:', err);
+      showModal('error', 'Ошибка', err.message || 'Не удалось записать на участие');
     }
   };
 
-  const handleCreateGiveaway = () => {
-    if (formData.category === 'Премиум') {
-      // Переносим текущий премиум розыгрыш в обычные, если он активен
-      if (premiumGiveaway.isActive) {
-        const currentPremium = {
-          ...premiumGiveaway,
-          id: Date.now(),
-          category: 'Обычный'
+  const handleCreateGiveaway = async () => {
+    try {
+      if (formData.category === 'Премиум') {
+        // Переносим текущий премиум розыгрыш в обычные, если он активен
+        if (premiumGiveaway.isActive) {
+          const currentPremiumData = {
+            title: premiumGiveaway.title,
+            description: premiumGiveaway.description,
+            socialNetwork: premiumGiveaway.socialNetwork,
+            socialLink: premiumGiveaway.socialLink,
+            endDate: premiumGiveaway.endDate,
+            isActive: premiumGiveaway.isActive,
+            category: 'Обычный'
+          };
+          
+          const createdGiveaway = await giveawayAPI.create(currentPremiumData);
+          
+          // Обновляем локальное состояние
+          const formattedGiveaway = {
+            id: createdGiveaway.id,
+            title: createdGiveaway.title,
+            description: createdGiveaway.description,
+            socialNetwork: createdGiveaway.social_network,
+            socialLink: createdGiveaway.social_link,
+            endDate: createdGiveaway.end_date,
+            participants: createdGiveaway.participants_count,
+            participantIds: [],
+            isActive: createdGiveaway.is_active,
+            category: createdGiveaway.category
+          };
+          
+          setGiveaways(prev => [...prev, formattedGiveaway]);
+        }
+        
+        // Обновляем премиум розыгрыш в БД
+        await premiumAPI.update(formData);
+        
+        // Обновляем локальное состояние
+        setPremiumGiveaway({
+          ...formData,
+          id: 'premium',
+          participants: 0,
+          participantIds: []
+        });
+        
+        showModal('success', 'Премиум розыгрыш создан!', 'Премиум розыгрыш успешно создан и сохранен');
+      } else {
+        // Создаем обычный розыгрыш
+        const createdGiveaway = await giveawayAPI.create(formData);
+        
+        // Обновляем локальное состояние
+        const formattedGiveaway = {
+          id: createdGiveaway.id,
+          title: createdGiveaway.title,
+          description: createdGiveaway.description,
+          socialNetwork: createdGiveaway.social_network,
+          socialLink: createdGiveaway.social_link,
+          endDate: createdGiveaway.end_date,
+          participants: createdGiveaway.participants_count,
+          participantIds: [],
+          isActive: createdGiveaway.is_active,
+          category: createdGiveaway.category
         };
-        setGiveaways(prev => [...prev, currentPremium]);
+        
+        setGiveaways(prev => [...prev, formattedGiveaway]);
+        showModal('success', 'Розыгрыш создан!', 'Розыгрыш успешно создан и сохранен в базе данных');
       }
       
-      // Устанавливаем новый премиум розыгрыш
-      setPremiumGiveaway({
-        ...formData,
-        id: 'premium',
-        participants: 0,
-        participantIds: []
-      });
-    } else {
-      const newGiveaway = {
-        ...formData,
-        id: Date.now(),
-        participants: 0,
-        participantIds: []
-      };
-      setGiveaways(prev => [...prev, newGiveaway]);
+      resetForm();
+    } catch (err) {
+      console.error('Ошибка создания розыгрыша:', err);
+      showModal('error', 'Ошибка', 'Не удалось создать розыгрыш. Попробуйте еще раз.');
     }
-    
-    // Автоматически удаляем демо-данные при создании первого реального розыгрыша
-    const hasDemo = giveaways.some(g => g.isDemo);
-    if (hasDemo) {
-      localStorage.setItem('wingather_demo_deleted', 'true');
-      setGiveaways(prev => prev.filter(g => !g.isDemo));
-    }
-    
-    resetForm();
   };
 
   const handleUpdateGiveaway = () => {
@@ -448,20 +516,21 @@ const GiveawayApp = () => {
       'confirm',
       'Подтверждение удаления',
       `Удалить розыгрыш "${giveaway?.title}"? Это действие нельзя отменить.`,
-      () => {
-        // Просто удаляем конкретный розыгрыш по ID
-        setGiveaways(prev => prev.filter(g => g.id !== id));
-        
-        // Если удаляем последний демо-розыгрыш, отмечаем что демо-данные удалены
-        if (giveaway?.isDemo) {
-          const remainingDemos = giveaways.filter(g => g.isDemo && g.id !== id);
-          if (remainingDemos.length === 0) {
-            localStorage.setItem('wingather_demo_deleted', 'true');
-          }
+      async () => {
+        try {
+          // Удаляем из базы данных
+          await giveawayAPI.delete(id);
+          
+          // Обновляем локальное состояние
+          setGiveaways(prev => prev.filter(g => g.id !== id));
+          
+          hideModal();
+          showModal('success', 'Розыгрыш удален', 'Розыгрыш успешно удален из базы данных');
+        } catch (err) {
+          console.error('Ошибка удаления розыгрыша:', err);
+          hideModal();
+          showModal('error', 'Ошибка', 'Не удалось удалить розыгрыш. Попробуйте еще раз.');
         }
-        
-        hideModal();
-        showModal('success', 'Розыгрыш удален', 'Розыгрыш успешно удален из системы');
       },
       hideModal
     );
@@ -601,6 +670,42 @@ const GiveawayApp = () => {
       </div>
     );
   };
+
+  // Экран загрузки
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-slate-900 to-black flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-r from-orange-500 to-amber-500 rounded-full mb-4 animate-spin">
+            <span className="text-2xl font-bold text-white">⟳</span>
+          </div>
+          <h2 className="text-xl font-bold text-white mb-2">Загрузка WinGather</h2>
+          <p className="text-slate-400">Подключение к базе данных...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Экран ошибки
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-slate-900 to-black flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-r from-red-500 to-red-600 rounded-full mb-4">
+            <span className="text-2xl font-bold text-white">⚠</span>
+          </div>
+          <h2 className="text-xl font-bold text-white mb-2">Ошибка подключения</h2>
+          <p className="text-slate-400 mb-4">{error}</p>
+          <button
+            onClick={loadData}
+            className="bg-gradient-to-r from-orange-500 to-amber-500 text-white px-6 py-3 rounded-xl hover:from-orange-600 hover:to-amber-600 transition-all duration-200 font-medium shadow-lg"
+          >
+            Попробовать снова
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (currentView === 'public') {
     return (
