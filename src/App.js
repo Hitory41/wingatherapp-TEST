@@ -48,43 +48,18 @@ const GiveawayApp = () => {
 
   const user = useUser();
 
-  const [giveaways, setGiveaways] = useStoredState('giveaways', [
-    {
-      id: 1,
-      title: 'iPhone 15 Pro',
-      description: 'Разыгрываем новейший iPhone 15 Pro 256GB',
-      socialNetwork: 'Telegram',
-      socialLink: 'https://t.me/example',
-      endDate: '2025-08-15',
-      participants: 145,
-      participantIds: [],
-      isActive: true,
-      category: 'VIP'
-    },
-    {
-      id: 2,
-      title: 'PlayStation 5',
-      description: 'Игровая консоль PlayStation 5 с игрой',
-      socialNetwork: 'VK',
-      socialLink: 'https://vk.com/example',
-      endDate: '2025-08-20',
-      participants: 89,
-      participantIds: [],
-      isActive: true,
-      category: 'Обычный'
-    }
-  ]);
+  const [giveaways, setGiveaways] = useStoredState('giveaways', []);
 
   const [premiumGiveaway, setPremiumGiveaway] = useStoredState('premiumGiveaway', {
     id: 'premium',
-    title: 'Главный розыгрыш',
-    description: 'Особенный розыгрыш с самым ценным призом месяца',
+    title: 'Создайте премиум розыгрыш',
+    description: 'Здесь будет отображаться ваш премиум розыгрыш',
     socialNetwork: 'Telegram',
-    socialLink: 'https://t.me/wingather',
-    endDate: '2025-08-31',
+    socialLink: '',
+    endDate: '2025-12-31',
     participants: 0,
     participantIds: [],
-    isActive: true,
+    isActive: false,
     category: 'Премиум'
   });
   
@@ -151,6 +126,47 @@ const GiveawayApp = () => {
     const hashedPassword = Math.abs(hash).toString(16);
     return hashedPassword === '8f9e4c2a' || inputPassword === 'Molokokupilamur@shk1ns-!'; // Дублируем для совместимости
   };
+
+  // Функция для инициализации демо-данных (только для первого запуска)
+  const initializeDemoData = () => {
+    const hasInitialized = localStorage.getItem('wingather_demo_initialized');
+    if (!hasInitialized && giveaways.length === 0) {
+      const demoGiveaways = [
+        {
+          id: Date.now() + 1,
+          title: 'iPhone 15 Pro (ДЕМО)',
+          description: 'Демонстрационный розыгрыш - можно удалить в админ-панели',
+          socialNetwork: 'Telegram',
+          socialLink: 'https://t.me/example',
+          endDate: '2025-08-15',
+          participants: 0,
+          participantIds: [],
+          isActive: true,
+          category: 'VIP'
+        },
+        {
+          id: Date.now() + 2,
+          title: 'PlayStation 5 (ДЕМО)',
+          description: 'Демонстрационный розыгрыш - можно удалить в админ-панели',
+          socialNetwork: 'VK',
+          socialLink: 'https://vk.com/example',
+          endDate: '2025-08-20',
+          participants: 0,
+          participantIds: [],
+          isActive: true,
+          category: 'Обычный'
+        }
+      ];
+      
+      setGiveaways(demoGiveaways);
+      localStorage.setItem('wingather_demo_initialized', 'true');
+    }
+  };
+
+  // Инициализация демо-данных при первом запуске
+  useEffect(() => {
+    initializeDemoData();
+  }, []);
 
   // Функции для модальных окон
   const showModal = (type, title, message, onConfirm = null, onCancel = null) => {
@@ -560,36 +576,38 @@ const GiveawayApp = () => {
               <p className="text-blue-200 text-base md:text-lg mb-2">Участвуй и выигрывай!</p>
             </header>
 
-            {/* Закреплённая ячейка на всю ширину */}
-            <div className="mb-2 md:mb-3">
-              <div className="bg-gradient-to-b from-slate-800/50 to-slate-900/50 backdrop-blur-sm border-2 border-purple-500 rounded-lg overflow-hidden hover:border-purple-400 transition-all duration-300 group hover:scale-[1.01] hover:shadow-xl hover:shadow-purple-500/10 relative">
-                <span className="absolute top-2 left-2 text-xs bg-purple-500/20 text-purple-300 px-2 py-1 rounded-full border border-purple-400/30 z-10">PREMIUM</span>
-                <div className="p-3 md:p-4 flex flex-col h-full">
-                  <div className="text-center mb-3 mt-6">
-                    <h3 className="text-sm md:text-base font-bold text-white mb-2 group-hover:text-orange-100 transition-colors">{premiumGiveaway.title}</h3>
-                    <p className="text-slate-300 leading-relaxed text-xs md:text-sm line-clamp-2">{premiumGiveaway.description}</p>
-                  </div>
-                  
-                  <div className="flex justify-between items-center mb-1">
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-gradient-to-r from-purple-500/20 to-purple-600/20 text-purple-300 border border-purple-400/20">
-                      {premiumGiveaway.socialNetwork}
-                    </span>
-                    <span className="text-xs text-slate-400">
-                      До {formatDate(premiumGiveaway.endDate)}
-                    </span>
-                  </div>
-                  
-                  <div className="mt-auto">
-                    <button
-                      onClick={() => handleParticipate('premium')}
-                      className="w-full bg-gradient-to-r from-purple-500 to-purple-600 text-white px-3 py-2 rounded-lg hover:from-purple-600 hover:to-purple-700 transition-all duration-200 font-medium shadow-lg hover:shadow-purple-500/25 transform hover:scale-[1.02] text-xs md:text-sm"
-                    >
-                      Участвовать
-                    </button>
+            {/* Закреплённая ячейка на всю ширину - показываем только если премиум активен */}
+            {premiumGiveaway.isActive && (
+              <div className="mb-2 md:mb-3">
+                <div className="bg-gradient-to-b from-slate-800/50 to-slate-900/50 backdrop-blur-sm border-2 border-purple-500 rounded-lg overflow-hidden hover:border-purple-400 transition-all duration-300 group hover:scale-[1.01] hover:shadow-xl hover:shadow-purple-500/10 relative">
+                  <span className="absolute top-2 left-2 text-xs bg-purple-500/20 text-purple-300 px-2 py-1 rounded-full border border-purple-400/30 z-10">PREMIUM</span>
+                  <div className="p-3 md:p-4 flex flex-col h-full">
+                    <div className="text-center mb-3 mt-6">
+                      <h3 className="text-sm md:text-base font-bold text-white mb-2 group-hover:text-orange-100 transition-colors">{premiumGiveaway.title}</h3>
+                      <p className="text-slate-300 leading-relaxed text-xs md:text-sm line-clamp-2">{premiumGiveaway.description}</p>
+                    </div>
+                    
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-gradient-to-r from-purple-500/20 to-purple-600/20 text-purple-300 border border-purple-400/20">
+                        {premiumGiveaway.socialNetwork}
+                      </span>
+                      <span className="text-xs text-slate-400">
+                        До {formatDate(premiumGiveaway.endDate)}
+                      </span>
+                    </div>
+                    
+                    <div className="mt-auto">
+                      <button
+                        onClick={() => handleParticipate('premium')}
+                        className="w-full bg-gradient-to-r from-purple-500 to-purple-600 text-white px-3 py-2 rounded-lg hover:from-purple-600 hover:to-purple-700 transition-all duration-200 font-medium shadow-lg hover:shadow-purple-500/25 transform hover:scale-[1.02] text-xs md:text-sm"
+                      >
+                        Участвовать
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
+            )}
 
             {/* Все розыгрыши в едином порядке */}
             <div className="grid grid-cols-2 gap-3 md:gap-4">
