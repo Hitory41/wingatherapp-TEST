@@ -987,6 +987,14 @@ const GiveawayApp = () => {
               </button>
               
               <button
+                onClick={() => window.open('https://t.me/Wingather', '_blank')}
+                className="w-full bg-gradient-to-r from-purple-500 to-purple-600 text-white py-3 rounded-xl hover:from-purple-600 hover:to-purple-700 transition-all duration-200 font-medium shadow-lg flex items-center justify-center gap-2"
+              >
+                <span>📞</span>
+                Связаться с администрацией
+              </button>
+              
+              <button
                 onClick={handleLocalLogout}
                 className="w-full text-red-400 py-3 hover:text-red-300 transition-colors border border-red-500/30 rounded-xl hover:border-red-400/50"
               >
