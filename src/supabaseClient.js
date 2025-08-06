@@ -1,3 +1,4 @@
+
 import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = 'https://xwdfosoiejzmajkoqarv.supabase.co'
@@ -238,29 +239,5 @@ export const userAPI = {
   }
 }
 
-// SQL функции (нужно создать в Supabase)
-/*
--- Функция для увеличения счетчика участников обычного розыгрыша
-CREATE OR REPLACE FUNCTION increment_participants(giveaway_id INTEGER)
-RETURNS INTEGER AS $$
-BEGIN
-  UPDATE giveaways 
-  SET participants_count = participants_count + 1 
-  WHERE id = giveaway_id;
-  
-  RETURN (SELECT participants_count FROM giveaways WHERE id = giveaway_id);
-END;
-$$ LANGUAGE plpgsql;
-
--- Функция для увеличения счетчика участников премиум розыгрыша
-CREATE OR REPLACE FUNCTION increment_premium_participants()
-RETURNS INTEGER AS $$
-BEGIN
-  UPDATE premium_giveaway 
-  SET participants_count = participants_count + 1 
-  WHERE id = 'premium';
-  
-  RETURN (SELECT participants_count FROM premium_giveaway WHERE id = 'premium');
-END;
-$$ LANGUAGE plpgsql;
-*/
+// SQL функции уже созданы в Части 2
+// Все функции работают с правильными типами данных UUID и VARCHAR
