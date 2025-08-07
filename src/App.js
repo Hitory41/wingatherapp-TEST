@@ -759,8 +759,17 @@ const GiveawayApp = () => {
               {giveaways
                 .filter(g => g.isActive)
                 .sort((a, b) => {
+                  // Сначала сортируем по категориям (Премиум всегда выше, но его тут нет)
                   const categoryOrder = { 'VIP': 1, 'Обычный': 2 };
-                  return categoryOrder[a.category] - categoryOrder[b.category];
+                  const categoryDiff = categoryOrder[a.category] - categoryOrder[b.category];
+                  
+                  if (categoryDiff !== 0) {
+                    return categoryDiff; // Если категории разные - сортируем по категории
+                  }
+                  
+                  // Если категории одинаковые - сортируем по дате создания (новые сверху)
+                  // Используем id как время создания (больший id = позже создан)
+                  return b.id - a.id;
                 })
                 .map(giveaway => {
                   const isVIP = giveaway.category === 'VIP';
@@ -771,12 +780,12 @@ const GiveawayApp = () => {
                   const hoverTextColor = isVIP ? 'group-hover:text-orange-100' : 'group-hover:text-blue-100';
                   
                   return (
-                    <div key={giveaway.id} className={`bg-gradient-to-b from-slate-800/50 to-slate-900/50 backdrop-blur-sm border-2 ${borderColor} rounded-lg overflow-hidden transition-all duration-300 group hover:scale-[1.01] hover:shadow-xl relative`}>
+                    <div key={giveaway.id} className={`bg-gradient-to-b from-slate-800/50 to-slate-900/50 backdrop-blur-sm border-2 ${borderColor} rounded-lg overflow-hidden transition-all duration-300 group hover:scale-[1.01] hover:shadow-xl relative min-h-[220px]`}>
                       {isVIP && (
                         <span className={`absolute top-2 left-2 text-xs px-2 py-1 rounded-full border z-10 ${badgeColor}`}>VIP</span>
                       )}
                       <div className="p-3 md:p-4 flex flex-col h-full">
-                        <div className="text-center mb-3 mt-6">
+                        <div className="text-center mb-3 mt-8">
                           <h3 className={`text-sm md:text-base font-bold text-white mb-2 ${hoverTextColor} transition-colors`}>{giveaway.title}</h3>
                           <p className="text-slate-300 leading-relaxed text-xs md:text-sm line-clamp-2">{giveaway.description}</p>
                         </div>
