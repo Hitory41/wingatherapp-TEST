@@ -775,8 +775,8 @@ const GiveawayApp = () => {
                       {isVIP && (
                         <span className={`absolute top-2 left-2 text-xs px-2 py-1 rounded-full border z-10 ${badgeColor}`}>VIP</span>
                       )}
-                      <div className="p-3 md:p-4 flex flex-col h-full min-h-[200px]">
-                        <div className="text-center mb-3 mt-8 flex-grow">
+                      <div className="p-3 md:p-4 flex flex-col h-full">
+                        <div className="text-center mb-3 mt-8 flex-1">
                           <h3 className={`text-sm md:text-base font-bold text-white mb-2 ${hoverTextColor} transition-colors`}>{giveaway.title}</h3>
                           <p className="text-slate-300 leading-relaxed text-xs md:text-sm line-clamp-2">{giveaway.description}</p>
                         </div>
