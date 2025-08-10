@@ -1270,6 +1270,12 @@ const GiveawayApp = () => {
 
             {giveaways
               .filter(g => g.isActive)
+              .sort((a, b) => {
+                // Сначала VIP, потом Обычные
+                if (a.category === 'VIP' && b.category !== 'VIP') return -1;
+                if (b.category === 'VIP' && a.category !== 'VIP') return 1;
+                return 0; // Остальные по порядку
+              })
               .map(giveaway => {
                 const isVIP = giveaway.category === 'VIP';
                 const borderColor = isVIP ? 'border-yellow-500' : 'border-blue-500';
