@@ -645,6 +645,8 @@ const GiveawayApp = () => {
                 <p className="text-slate-300 leading-relaxed">{giveaway.description}</p>
               </div>
 
+              {/* Блок со ссылкой УБРАН - пользователь переходит только через кнопку "Участвовать" */}
+
               <div className="grid grid-cols-2 gap-4 mb-6">
                 <div className="bg-slate-800/30 rounded-lg p-3 border border-slate-700/30">
                   <div className="text-slate-400 text-xs mb-1">Платформа</div>
