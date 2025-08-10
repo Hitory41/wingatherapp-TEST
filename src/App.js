@@ -89,6 +89,12 @@ const GiveawayApp = () => {
     onConfirm: null,
     onCancel: null
   });
+  
+  // Состояние для модального окна с информацией о розыгрыше
+  const [giveawayModal, setGiveawayModal] = useState({
+    show: false,
+    giveaway: null
+  });
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -207,6 +213,21 @@ const GiveawayApp = () => {
     });
   };
 
+  // Функции для модального окна розыгрыша
+  const showGiveawayModal = (giveaway) => {
+    setGiveawayModal({
+      show: true,
+      giveaway: giveaway
+    });
+  };
+
+  const hideGiveawayModal = () => {
+    setGiveawayModal({
+      show: false,
+      giveaway: null
+    });
+  };
+
   // Обработка единого входа
   const handleLogin = () => {
     if (!loginForm.nickname.trim() || !loginForm.password.trim()) {
@@ -285,6 +306,122 @@ const GiveawayApp = () => {
     );
   };
 
+  // Компонент модального окна с информацией о розыгрыше
+  const GiveawayModal = () => {
+    if (!giveawayModal.show || !giveawayModal.giveaway) return null;
+
+    const giveaway = giveawayModal.giveaway;
+    const isVIP = giveaway.category === 'VIP';
+    const isPremium = giveaway.category === 'Премиум';
+    
+    const getModalColors = () => {
+      if (isPremium) {
+        return {
+          bg: 'from-purple-500/20 to-purple-600/20',
+          border: 'border-purple-500/30',
+          button: 'from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700',
+          badge: 'bg-purple-500/20 text-purple-300 border-purple-400/30'
+        };
+      } else if (isVIP) {
+        return {
+          bg: 'from-yellow-500/20 to-amber-500/20',
+          border: 'border-yellow-500/30',
+          button: 'from-yellow-500 to-amber-500 hover:from-yellow-600 hover:to-amber-600',
+          badge: 'bg-yellow-500/20 text-yellow-300 border-yellow-400/30'
+        };
+      } else {
+        return {
+          bg: 'from-blue-500/20 to-blue-600/20',
+          border: 'border-blue-500/30',
+          button: 'from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700',
+          badge: 'bg-blue-500/20 text-blue-300 border-blue-400/30'
+        };
+      }
+    };
+
+    const colors = getModalColors();
+    const hasValidLink = giveaway.socialLink && giveaway.socialLink.trim();
+
+    return (
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-[110]">
+        <div className={'bg-gradient-to-b from-slate-800/95 to-slate-900/95 backdrop-blur-xl border-2 ' + colors.border + ' rounded-2xl w-full max-w-lg shadow-2xl animate-in zoom-in-95 duration-300'}>
+          <div className="relative">
+            {/* Закрыть */}
+            <button
+              onClick={hideGiveawayModal}
+              className="absolute top-4 right-4 w-8 h-8 bg-slate-700/50 hover:bg-slate-600/50 rounded-full flex items-center justify-center text-slate-400 hover:text-white transition-all z-10"
+            >
+              ✕
+            </button>
+
+            {/* Заголовок с категорией */}
+            <div className={'bg-gradient-to-r ' + colors.bg + ' p-6 rounded-t-2xl border-b ' + colors.border}>
+              <div className="flex items-center gap-3 mb-3">
+                <span className={'px-3 py-1 rounded-full text-sm font-medium border ' + colors.badge}>
+                  {giveaway.category}
+                </span>
+                <span className="text-slate-400 text-sm">
+                  👥 {giveaway.participants} участников
+                </span>
+              </div>
+              <h3 className="text-2xl font-bold text-white pr-8">{giveaway.title}</h3>
+            </div>
+
+            {/* Содержимое */}
+            <div className="p-6">
+              <div className="mb-6">
+                <h4 className="text-white font-medium mb-2">Описание розыгрыша:</h4>
+                <p className="text-slate-300 leading-relaxed">{giveaway.description}</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 mb-6">
+                <div className="bg-slate-800/30 rounded-lg p-3 border border-slate-700/30">
+                  <div className="text-slate-400 text-xs mb-1">Платформа</div>
+                  <div className="text-white font-medium">{giveaway.socialNetwork}</div>
+                </div>
+                <div className="bg-slate-800/30 rounded-lg p-3 border border-slate-700/30">
+                  <div className="text-slate-400 text-xs mb-1">Окончание</div>
+                  <div className="text-white font-medium">{formatDate(giveaway.endDate)}</div>
+                </div>
+              </div>
+
+              {hasValidLink && (
+                <div className="mb-6 bg-slate-800/30 rounded-lg p-3 border border-slate-700/30">
+                  <div className="text-slate-400 text-xs mb-2">Ссылка на розыгрыш:</div>
+                  <div className="text-blue-400 text-sm break-all">{giveaway.socialLink}</div>
+                </div>
+              )}
+
+              {!hasValidLink && (
+                <div className="mb-6 bg-amber-900/20 border border-amber-500/30 rounded-lg p-3">
+                  <div className="text-amber-300 text-sm flex items-center gap-2">
+                    <span>⚠️</span>
+                    Администратор не добавил ссылку на этот розыгрыш
+                  </div>
+                </div>
+              )}
+
+              <div className="flex gap-3">
+                <button
+                  onClick={hideGiveawayModal}
+                  className="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-3 px-4 rounded-xl transition-all duration-200 font-medium"
+                >
+                  Закрыть
+                </button>
+                <button
+                  onClick={() => handleParticipate(giveaway.id === 'premium' ? 'premium' : giveaway.id, true)}
+                  className={'flex-2 bg-gradient-to-r ' + colors.button + ' text-white py-3 px-6 rounded-xl transition-all duration-200 font-medium shadow-lg min-w-[120px]'}
+                >
+                  🎯 Участвовать
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const handleLogout = () => {
     setIsAuthenticated(false);
     setCurrentView('public');
@@ -349,8 +486,10 @@ const GiveawayApp = () => {
         }
         
         showModal('success', 'Участие подтверждено!', 'Вы участвуете в премиум розыгрыше! Удачи!');
-        if (premiumGiveaway.socialLink) {
-          window.open(premiumGiveaway.socialLink, '_blank');
+        if (premiumGiveaway.socialLink && premiumGiveaway.socialLink.trim()) {
+          setTimeout(() => {
+            window.open(premiumGiveaway.socialLink, '_blank');
+          }, 1000);
         }
       } else {
         const giveaway = giveaways.find(g => g.id === id);
@@ -399,8 +538,10 @@ const GiveawayApp = () => {
         }
         
         showModal('success', 'Участие подтверждено!', `Вы участвуете в розыгрыше "${giveaway.title}"! Удачи!`);
-        if (giveaway.socialLink) {
-          window.open(giveaway.socialLink, '_blank');
+        if (giveaway.socialLink && giveaway.socialLink.trim()) {
+          setTimeout(() => {
+            window.open(giveaway.socialLink, '_blank');
+          }, 1000);
         }
       }
     } catch (err) {
@@ -679,8 +820,8 @@ const GiveawayApp = () => {
           <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-r from-orange-500 to-amber-500 rounded-full mb-4 animate-spin">
             <span className="text-2xl font-bold text-white">⟳</span>
           </div>
-          <h2 className="text-xl font-bold text-white mb-2">Загрузка WinGather</h2>
-          <p className="text-slate-400">Подключение к базе данных...</p>
+          <h2 className="text-xl font-bold text-white mb-2">Загрузка WinGather DEV</h2>
+          <p className="text-slate-400">Подключение к тестовой базе данных...</p>
         </div>
       </div>
     );
@@ -716,9 +857,9 @@ const GiveawayApp = () => {
           <div className="max-w-6xl mx-auto relative z-10">
             <header className="text-center mb-4">
               <h1 className="text-4xl md:text-5xl font-bold bg-gradient-to-r from-white to-blue-100 bg-clip-text text-transparent mb-1" style={{fontFamily: 'Russo One, sans-serif'}}>
-                WinGather
+                WinGather DEV
               </h1>
-              <p className="text-blue-200 text-base md:text-lg mb-2">Участвуй и выигрывай!</p>
+              <p className="text-blue-200 text-base md:text-lg mb-2">Тестовая версия - Участвуй и выигрывай!</p>
             </header>
 
             {/* Закреплённая ячейка на всю ширину - показываем только если премиум активен */}
@@ -775,8 +916,8 @@ const GiveawayApp = () => {
                       {isVIP && (
                         <span className={`absolute top-2 left-2 text-xs px-2 py-1 rounded-full border z-10 ${badgeColor}`}>VIP</span>
                       )}
-                      <div className="p-3 md:p-4 flex flex-col h-full">
-                        <div className="text-center mb-3 mt-8 flex-1">
+                      <div className="p-3 md:p-4 flex flex-col h-full min-h-[200px]">
+                        <div className="text-center mb-3 mt-8 flex-grow">
                           <h3 className={`text-sm md:text-base font-bold text-white mb-2 ${hoverTextColor} transition-colors`}>{giveaway.title}</h3>
                           <p className="text-slate-300 leading-relaxed text-xs md:text-sm line-clamp-2">{giveaway.description}</p>
                         </div>
@@ -1020,8 +1161,8 @@ const GiveawayApp = () => {
                   <span className="text-lg md:text-xl font-bold text-white">A</span>
                 </div>
                 <div>
-                  <h1 className="text-2xl md:text-3xl font-bold text-white">Админ панель</h1>
-                  <p className="text-slate-400 text-xs md:text-sm">Управление розыгрышами</p>
+                  <h1 className="text-2xl md:text-3xl font-bold text-white">Админ панель DEV</h1>
+                  <p className="text-slate-400 text-xs md:text-sm">Управление розыгрышами (тестовая версия)</p>
                 </div>
               </div>
               <div className="flex space-x-2 md:space-x-3 w-full md:w-auto">
