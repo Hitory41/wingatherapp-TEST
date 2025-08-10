@@ -427,7 +427,10 @@ const GiveawayApp = () => {
     setCurrentView('public');
   };
 
-  const handleParticipate = async (id) => {
+  const handleParticipate = async (id, fromModal = false) => {
+    if (fromModal) {
+      hideGiveawayModal();
+    }
     // Проверяем авторизацию (локальный пользователь или Hatch пользователь)
     const currentUser = localUser || user;
     if (!currentUser || !currentUser.id) {
