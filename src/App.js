@@ -1,1146 +1,1359 @@
 import React, { useState, useEffect } from 'react';
 import './App.css';
-import { giveawayAPI, premiumAPI, participantAPI, userAPI } from './supabaseClient';
+import { giveawayAPI, premiumAPI, participantAPI, userAPI } from './api';
 
-// Замена для hatch.useStoredState (теперь только для локальных настроек)
-const useStoredState = (key, defaultValue) => {
-  const [value, setValue] = useState(() => {
-    try {
-      const item = window.localStorage.getItem(key);
-      return item ? JSON.parse(item) : defaultValue;
-    } catch (error) {
-      return defaultValue;
-    }
-  });
-
-  const setStoredValue = (newValue) => {
-    try {
-      setValue(newValue);
-      window.localStorage.setItem(key, JSON.stringify(newValue));
-    } catch (error) {
-      console.error('Error saving to localStorage:', error);
-    }
-  };
-
-  return [value, setStoredValue];
-};
-
-// Замена для hatch.useUser
-const useUser = () => ({
-  id: 'web_user_' + Math.random().toString(36).substr(2, 9),
-  name: 'Веб пользователь',
-  color: '#FF802B'
-});
-
-// Load Russo One font
-const loadFont = () => {
-  const link = document.createElement('link');
-  link.href = 'https://fonts.googleapis.com/css2?family=Russo+One&display=swap';
-  link.rel = 'stylesheet';
-  if (!document.head.querySelector(`link[href="${link.href}"]`)) {
-    document.head.appendChild(link);
-  }
-};
-
-const GiveawayApp = () => {
-  useEffect(() => {
-    loadFont();
-  }, []);
-
-  const user = useUser();
-
+function App() {
+  const [currentView, setCurrentView] = useState('main');
   const [giveaways, setGiveaways] = useState([]);
-  const [premiumGiveaway, setPremiumGiveaway] = useState({
-    id: 'premium',
-    title: 'Создайте премиум розыгрыш',
-    description: 'Здесь будет отображаться ваш премиум розыгрыш',
-    socialNetwork: 'Telegram',
-    socialLink: '',
-    endDate: '2025-12-31',
-    participants: 0,
-    participantIds: [],
-    isActive: false,
-    category: 'Премиум'
-  });
-
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  const [currentView, setCurrentView] = useState('public');
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [password, setPassword] = useState('');
-  const [editingGiveaway, setEditingGiveaway] = useState(null);
-
-  // Локальный профиль пользователя
-  const [localUser, setLocalUser] = useStoredState('localUser', null);
-  const [userProfiles, setUserProfiles] = useStoredState('userProfiles', {});
+  const [premiumGiveaway, setPremiumGiveaway] = useState(null);
+  const [localUser, setLocalUser] = useState(null);
   const [showUserProfile, setShowUserProfile] = useState(false);
-  const [loginForm, setLoginForm] = useState({ 
-    nickname: '', 
-    password: '' 
-  });
+  const [selectedGiveaway, setSelectedGiveaway] = useState(null);
+  const [showGiveawayModal, setShowGiveawayModal] = useState(false);
+  const [showModal, setShowModal] = useState(false);
+  const [modalContent, setModalContent] = useState({ title: '', message: '', type: 'info' });
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingGiveaway, setEditingGiveaway] = useState(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deletingGiveaway, setDeletingGiveaway] = useState(null);
+  const [showPremiumModal, setShowPremiumModal] = useState(false);
+  const [participantsData, setParticipantsData] = useState([]);
+  const [showParticipantsModal, setShowParticipantsModal] = useState(false);
+  const [viewingParticipants, setViewingParticipants] = useState(null);
+  const [adminPassword, setAdminPassword] = useState('');
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
+  const [showAdminLogin, setShowAdminLogin] = useState(false);
 
-  // Состояния для модальных окон
-  const [modal, setModal] = useState({
-    show: false,
-    type: '',
-    title: '',
-    message: '',
-    onConfirm: null,
-    onCancel: null
-  });
-
-  // Состояние для модального окна с информацией о розыгрыше
-  const [giveawayModal, setGiveawayModal] = useState({
-    show: false,
-    giveaway: null
-  });
-
-  const [formData, setFormData] = useState({
-    title: '',
-    description: '',
-    socialNetwork: 'Telegram',
-    socialLink: '',
-    endDate: '',
-    isActive: true,
-    category: 'Обычный'
-  });
-
-  // Зашифрованные данные администратора
-  const encryptedAdminData = {
-    nickname: 'dGhnaW5kb29H',
-    passwordHash: '8f9e4c2a5b1d6e3f7a8c9b2e4d5f6a7b8c9d1e2f3a4b5c6d7e8f9a1b2c3d4e5f6'
-  };
-
-  // Функция для декодирования никнейма
-  const decodeNickname = (encoded) => {
+  // Загрузка данных
+  const loadGiveaways = async () => {
     try {
-      return atob(encoded).split('').reverse().join('');
-    } catch {
-      return null;
+      const data = await giveawayAPI.getAll();
+      setGiveaways(data);
+    } catch (error) {
+      console.error('Ошибка загрузки розыгрышей:', error);
+      showMessageModal('Ошибка', 'Не удалось загрузить розыгрыши', 'error');
     }
   };
 
-  // Функция для проверки пароля
-  const checkPassword = (inputPassword) => {
-    let hash = 0;
-    const str = inputPassword + 'salt_key_2024';
-    for (let i = 0; i < str.length; i++) {
-      const char = str.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
-      hash = hash & hash;
-    }
-    const hashedPassword = Math.abs(hash).toString(16);
-    return hashedPassword === '8f9e4c2a' || inputPassword === 'Molokokupilamur@shk1ns-!';
-  };
-
-  // Загрузка данных из базы данных
-  const loadData = async () => {
+  const loadPremiumGiveaway = async () => {
     try {
-      setLoading(true);
-      setError(null);
-
-      const giveawaysData = await giveawayAPI.getAll();
-      
-      const formattedGiveaways = giveawaysData.map(g => ({
-        id: g.id,
-        title: g.title,
-        description: g.description,
-        socialNetwork: g.social_network,
-        socialLink: g.social_link,
-        endDate: g.end_date,
-        participants: g.participants_count,
-        participantIds: [],
-        isActive: g.is_active,
-        category: g.category,
-        isDemo: g.title.includes('(ДЕМО)')
-      }));
-      
-      setGiveaways(formattedGiveaways);
-      
-      const premiumData = await premiumAPI.get();
-      setPremiumGiveaway({
-        id: 'premium',
-        title: premiumData.title,
-        description: premiumData.description,
-        socialNetwork: premiumData.social_network,
-        socialLink: premiumData.social_link,
-        endDate: premiumData.end_date,
-        participants: premiumData.participants_count,
-        participantIds: [],
-        isActive: premiumData.is_active,
-        category: 'Премиум'
-      });
-      
-    } catch (err) {
-      console.error('Ошибка загрузки данных:', err);
-      setError('Ошибка подключения к базе данных');
-    } finally {
-      setLoading(false);
+      const data = await premiumAPI.get();
+      setPremiumGiveaway(data);
+    } catch (error) {
+      console.error('Ошибка загрузки премиум розыгрыша:', error);
     }
   };
 
+  const loadParticipants = async (giveawayId, isPremium = false) => {
+    try {
+      // Здесь должен быть запрос к API для получения списка участников
+      // Пока что заглушка
+      const mockParticipants = [
+        { id: 1, user_name: 'Участник 1', created_at: new Date().toISOString() },
+        { id: 2, user_name: 'Участник 2', created_at: new Date().toISOString() },
+      ];
+      setParticipantsData(mockParticipants);
+    } catch (error) {
+      console.error('Ошибка загрузки участников:', error);
+      showMessageModal('Ошибка', 'Не удалось загрузить список участников', 'error');
+    }
+  };
+
+  // Загрузка данных при монтировании
   useEffect(() => {
-    loadData();
+    loadGiveaways();
+    loadPremiumGiveaway();
+    
+    // Проверяем локального пользователя
+    const savedUser = localStorage.getItem('wingather_user');
+    if (savedUser) {
+      setLocalUser(JSON.parse(savedUser));
+    }
+
+    // Проверяем админскую аутентификацию
+    const isAdmin = localStorage.getItem('wingather_admin') === 'true';
+    setIsAdminAuthenticated(isAdmin);
   }, []);
 
-  // Функции для модальных окон
-  const showModal = (type, title, message, onConfirm = null, onCancel = null) => {
-    setModal({
-      show: true,
-      type,
-      title,
-      message,
-      onConfirm,
-      onCancel
-    });
-  };
-
-  const hideModal = () => {
-    setModal({
-      show: false,
-      type: '',
-      title: '',
-      message: '',
-      onConfirm: null,
-      onCancel: null
-    });
-  };
-
-  // Функции для модального окна розыгрыша
-  const showGiveawayModal = (giveaway) => {
-    setGiveawayModal({
-      show: true,
-      giveaway: giveaway
-    });
-  };
-
-  const hideGiveawayModal = () => {
-    setGiveawayModal({
-      show: false,
-      giveaway: null
-    });
-  };
-
-  // Обработка единого входа
-  const handleLogin = () => {
-    if (!loginForm.nickname.trim() || !loginForm.password.trim()) {
-      showModal('error', 'Ошибка входа', 'Введите никнейм и пароль');
-      return;
-    }
-
-    const decodedAdminNickname = decodeNickname(encryptedAdminData.nickname);
-    if (loginForm.nickname === decodedAdminNickname && checkPassword(loginForm.password)) {
-      setIsAuthenticated(true);
-      setCurrentView('admin');
-      setLoginForm({ 
-        nickname: '', 
-        password: '' 
-      });
-      showModal('success', 'Успешный вход', 'Добро пожаловать в админ-панель!');
-      return;
-    }
-
-    const userKey = loginForm.nickname.trim().toLowerCase();
-    const existingProfile = userProfiles[userKey];
-
-    if (existingProfile && existingProfile.password === loginForm.password) {
-      setLocalUser(existingProfile);
-      setCurrentView('public');
-      setLoginForm({ 
-        nickname: '', 
-        password: '' 
-      });
-      showModal('success', 'С возвращением!', `Добро пожаловать обратно, ${existingProfile.nickname}!`);
-    } else if (existingProfile && existingProfile.password !== loginForm.password) {
-      showModal('error', 'Неверный пароль', 'Этот никнейм уже используется с другим паролем');
-    } else {
-      const newUser = {
-        id: `local_${Date.now()}`,
-        nickname: loginForm.nickname.trim(),
-        password: loginForm.password,
-        createdAt: new Date().toISOString(),
-        participations: []
-      };
-      
-      setUserProfiles(prev => ({
-        ...prev,
-        [userKey]: newUser
-      }));
-      
-      setLocalUser(newUser);
-      setCurrentView('public');
-      setLoginForm({ 
-        nickname: '', 
-        password: '' 
-      });
-      showModal('success', 'Добро пожаловать!', `Профиль ${newUser.nickname} успешно создан!`);
-    }
-  };
-
-  // Выход из локального аккаунта
   const handleLocalLogout = () => {
-    showModal(
-      'confirm',
-      'Подтвердите действие',
-      'Выйти из аккаунта? Данные профиля сохранятся на устройстве.',
-      () => {
-        if (localUser) {
-          const userKey = localUser.nickname.toLowerCase();
-          setUserProfiles(prev => ({
-            ...prev,
-            [userKey]: localUser
-          }));
-        }
-
-        setLocalUser(null);
-        setCurrentView('public');
-        hideModal();
-        showModal('success', 'Выход выполнен', 'Вы успешно вышли из профиля. Данные сохранены на устройстве.');
-      },
-      hideModal
-    );
+    localStorage.removeItem('wingather_user');
+    setLocalUser(null);
+    setShowUserProfile(false);
+    showMessageModal('Выход выполнен', 'Вы успешно вышли из аккаунта', 'success');
   };
 
-  const handleLogout = () => {
-    setIsAuthenticated(false);
-    setCurrentView('public');
-  };
-
-  const handleParticipate = async (id, fromModal = false) => {
-    if (fromModal) {
-      hideGiveawayModal();
+  const handleAdminLogin = () => {
+    if (adminPassword === 'admin123') {
+      setIsAdminAuthenticated(true);
+      localStorage.setItem('wingather_admin', 'true');
+      setShowAdminLogin(false);
+      setAdminPassword('');
+      showMessageModal('Вход в админ панель', 'Добро пожаловать в админ панель!', 'success');
+    } else {
+      showMessageModal('Ошибка', 'Неверный пароль администратора', 'error');
     }
+  };
 
-    const currentUser = localUser || user;
-    if (!currentUser || !currentUser.id) {
-      showModal(
-        'error',
-        'Требуется авторизация',
-        'Необходимо войти в систему для участия в розыгрыше',
-        () => {
-          setCurrentView('login');
-          hideModal();
-        }
-      );
+  const handleAdminLogout = () => {
+    setIsAdminAuthenticated(false);
+    localStorage.removeItem('wingather_admin');
+    showMessageModal('Выход из админ панели', 'Вы вышли из админ панели', 'info');
+  };
+
+  const showMessageModal = (title, message, type = 'info') => {
+    setModalContent({ title, message, type });
+    setShowModal(true);
+  };
+
+  const formatDate = (dateString) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('ru-RU');
+  };
+
+  const handleGiveawayClick = (giveaway) => {
+    setSelectedGiveaway(giveaway);
+    setShowGiveawayModal(true);
+  };
+
+  const handleParticipate = async (giveaway, isPremium = false) => {
+    if (!localUser) {
+      showMessageModal('Требуется авторизация', 'Войдите в аккаунт для участия в розыгрыше', 'warning');
       return;
     }
 
     try {
-      if (id === 'premium') {
-        const alreadyParticipating = await participantAPI.checkParticipation(currentUser.id, null, true);
-        if (alreadyParticipating) {
-          showModal('error', 'Уже участвуете', 'Вы уже участвуете в этом розыгрыше!');
-          return;
-        }
-        
-        await participantAPI.addToPremium(currentUser.id, currentUser.name || currentUser.nickname);
+      if (isPremium) {
+        await participantAPI.addToPremium(localUser.id, localUser.nickname);
         await premiumAPI.incrementParticipants();
-        
-        setPremiumGiveaway(prev => ({ 
-          ...prev, 
-          participants: prev.participants + 1
-        }));
-        
-        if (localUser) {
-          const updatedUser = {
-            ...localUser,
-            participations: [...(localUser.participations || []), {
-              giveawayId: 'premium',
-              giveawayTitle: premiumGiveaway.title,
-              date: new Date().toISOString()
-            }]
-          };
-          
-          setLocalUser(updatedUser);
-          
-          const userKey = localUser.nickname.toLowerCase();
-          setUserProfiles(prev => ({
-            ...prev,
-            [userKey]: updatedUser
-          }));
-        }
-        
-        showModal('success', 'Участие подтверждено!', 'Вы участвуете в премиум розыгрыше! Удачи!');
-        if (premiumGiveaway.socialLink && premiumGiveaway.socialLink.trim()) {
-          setTimeout(() => {
-            window.open(premiumGiveaway.socialLink, '_blank');
-          }, 1000);
-        }
       } else {
-        const giveaway = giveaways.find(g => g.id === id);
-        if (!giveaway) return;
-        
-        const alreadyParticipating = await participantAPI.checkParticipation(currentUser.id, id, false);
-        if (alreadyParticipating) {
-          showModal('error', 'Уже участвуете', 'Вы уже участвуете в этом розыгрыше!');
-          return;
-        }
-        
-        await participantAPI.addToGiveaway(currentUser.id, currentUser.name || currentUser.nickname, id);
-        await giveawayAPI.incrementParticipants(id);
-        
-        setGiveaways(prev => prev.map(g => 
-          g.id === id ? { 
-            ...g, 
-            participants: g.participants + 1
-          } : g
-        ));
-        
-        if (localUser) {
-          const updatedUser = {
-            ...localUser,
-            participations: [...(localUser.participations || []), {
-              giveawayId: id,
-              giveawayTitle: giveaway.title,
-              date: new Date().toISOString()
-            }]
-          };
-          
-          setLocalUser(updatedUser);
-          
-          const userKey = localUser.nickname.toLowerCase();
-          setUserProfiles(prev => ({
-            ...prev,
-            [userKey]: updatedUser
-          }));
-        }
-        
-        showModal('success', 'Участие подтверждено!', `Вы участвуете в розыгрыше "${giveaway.title}"! Удачи!`);
-        if (giveaway.socialLink && giveaway.socialLink.trim()) {
-          setTimeout(() => {
-            window.open(giveaway.socialLink, '_blank');
-          }, 1000);
-        }
+        await participantAPI.addToGiveaway(localUser.id, localUser.nickname, giveaway.id);
+        await giveawayAPI.incrementParticipants(giveaway.id);
       }
-    } catch (err) {
-      console.error('Ошибка участия:', err);
-      showModal('error', 'Ошибка', err.message || 'Не удалось записать на участие');
-    }
-  };
 
-  const handleCreateGiveaway = async () => {
-    try {
-      if (formData.category === 'Премиум') {
-        if (premiumGiveaway.isActive) {
-          const currentPremiumData = {
-            title: premiumGiveaway.title,
-            description: premiumGiveaway.description,
-            socialNetwork: premiumGiveaway.socialNetwork,
-            socialLink: premiumGiveaway.socialLink,
-            endDate: premiumGiveaway.endDate,
-            isActive: premiumGiveaway.isActive,
-            category: 'Обычный'
-          };
-
-          const createdGiveaway = await giveawayAPI.create(currentPremiumData);
-          
-          const formattedGiveaway = {
-            id: createdGiveaway.id,
-            title: createdGiveaway.title,
-            description: createdGiveaway.description,
-            socialNetwork: createdGiveaway.social_network,
-            socialLink: createdGiveaway.social_link,
-            endDate: createdGiveaway.end_date,
-            participants: createdGiveaway.participants_count,
-            participantIds: [],
-            isActive: createdGiveaway.is_active,
-            category: createdGiveaway.category
-          };
-          
-          setGiveaways(prev => [...prev, formattedGiveaway]);
-        }
-        
-        await premiumAPI.update(formData);
-        
-        setPremiumGiveaway({
-          ...formData,
-          id: 'premium',
-          participants: 0,
-          participantIds: []
-        });
-        
-        showModal('success', 'Премиум розыгрыш создан!', 'Премиум розыгрыш успешно создан и сохранен');
-      } else {
-        const createdGiveaway = await giveawayAPI.create(formData);
-        
-        const formattedGiveaway = {
-          id: createdGiveaway.id,
-          title: createdGiveaway.title,
-          description: createdGiveaway.description,
-          socialNetwork: createdGiveaway.social_network,
-          socialLink: createdGiveaway.social_link,
-          endDate: createdGiveaway.end_date,
-          participants: createdGiveaway.participants_count,
-          participantIds: [],
-          isActive: createdGiveaway.is_active,
-          category: createdGiveaway.category
-        };
-        
-        setGiveaways(prev => [...prev, formattedGiveaway]);
-        showModal('success', 'Розыгрыш создан!', 'Розыгрыш успешно создан и сохранен в базе данных');
-      }
+      showMessageModal('Участие принято!', 'Вы успешно участвуете в розыгрыше', 'success');
       
-      resetForm();
-    } catch (err) {
-      console.error('Ошибка создания розыгрыша:', err);
-      showModal('error', 'Ошибка', 'Не удалось создать розыгрыш. Попробуйте еще раз.');
+      // Обновляем данные
+      if (isPremium) {
+        loadPremiumGiveaway();
+      } else {
+        loadGiveaways();
+      }
+
+      // Переход на внешнюю платформу
+      const link = isPremium ? premiumGiveaway.social_link : giveaway.social_link;
+      if (link) {
+        window.open(link, '_blank');
+      }
+    } catch (error) {
+      showMessageModal('Ошибка', error.message || 'Произошла ошибка при участии в розыгрыше', 'error');
     }
   };
 
-  const handleUpdateGiveaway = () => {
-    if (formData.category === 'Премиум') {
-      const currentPremium = {
-        ...premiumGiveaway,
-        id: Date.now(),
-        category: 'Обычный'
-      };
-      setGiveaways(prev => [...prev.filter(g => g.id !== editingGiveaway.id), currentPremium]);
+  // ==================== АДМИН ФУНКЦИИ ====================
 
-      setPremiumGiveaway({
-        ...editingGiveaway,
-        ...formData,
-        id: 'premium',
-        participants: editingGiveaway.participants || 0,
-        participantIds: editingGiveaway.participantIds || []
-      });
-    } else {
-      setGiveaways(prev => prev.map(g => 
-        g.id === editingGiveaway.id ? { ...editingGiveaway, ...formData } : g
-      ));
+  const handleCreateGiveaway = async (giveawayData) => {
+    try {
+      await giveawayAPI.create(giveawayData);
+      await loadGiveaways();
+      setShowCreateModal(false);
+      showMessageModal('Успех!', 'Розыгрыш успешно создан', 'success');
+    } catch (error) {
+      showMessageModal('Ошибка', error.message || 'Не удалось создать розыгрыш', 'error');
     }
-    resetForm();
   };
 
-  const handleDeleteGiveaway = (id) => {
-    const giveaway = giveaways.find(g => g.id === id);
-    showModal(
-      'confirm',
-      'Подтверждение удаления',
-      `Удалить розыгрыш "${giveaway?.title}"? Это действие нельзя отменить.`,
-      async () => {
-        try {
-          await giveawayAPI.delete(id);
-          setGiveaways(prev => prev.filter(g => g.id !== id));
-          hideModal();
-          showModal('success', 'Розыгрыш удален', 'Розыгрыш успешно удален из базы данных');
-        } catch (err) {
-          console.error('Ошибка удаления розыгрыша:', err);
-          hideModal();
-          showModal('error', 'Ошибка', 'Не удалось удалить розыгрыш. Попробуйте еще раз.');
-        }
-      },
-      hideModal
+  const handleUpdateGiveaway = async (id, updates) => {
+    try {
+      await giveawayAPI.update(id, updates);
+      await loadGiveaways();
+      setShowEditModal(false);
+      setEditingGiveaway(null);
+      showMessageModal('Успех!', 'Розыгрыш успешно обновлен', 'success');
+    } catch (error) {
+      showMessageModal('Ошибка', error.message || 'Не удалось обновить розыгрыш', 'error');
+    }
+  };
+
+  const handleDeleteGiveaway = async (id) => {
+    try {
+      await giveawayAPI.delete(id);
+      await loadGiveaways();
+      setShowDeleteConfirm(false);
+      setDeletingGiveaway(null);
+      showMessageModal('Успех!', 'Розыгрыш успешно удален', 'success');
+    } catch (error) {
+      showMessageModal('Ошибка', error.message || 'Не удалось удалить розыгрыш', 'error');
+    }
+  };
+
+  const handleUpdatePremium = async (updates) => {
+    try {
+      await premiumAPI.update(updates);
+      await loadPremiumGiveaway();
+      setShowPremiumModal(false);
+      showMessageModal('Успех!', 'Премиум розыгрыш обновлен', 'success');
+    } catch (error) {
+      showMessageModal('Ошибка', error.message || 'Не удалось обновить премиум розыгрыш', 'error');
+    }
+  };
+
+  // Компонент модального окна
+  const Modal = () => {
+    if (!showModal) return null;
+
+    return (
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-[200]">
+        <div className="bg-slate-800/95 backdrop-blur-xl border border-slate-700 rounded-2xl p-6 w-full max-w-md">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-xl font-bold text-white">{modalContent.title}</h3>
+            <button
+              onClick={() => setShowModal(false)}
+              className="text-slate-400 hover:text-white w-8 h-8 rounded-full bg-slate-700/50 hover:bg-slate-600/50 flex items-center justify-center"
+            >
+              ✕
+            </button>
+          </div>
+          <p className="text-slate-300 mb-6">{modalContent.message}</p>
+          <button
+            onClick={() => setShowModal(false)}
+            className="w-full bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-xl transition-colors"
+          >
+            ОК
+          </button>
+        </div>
+      </div>
     );
   };
 
-  // Функция для быстрого удаления всех демо-розыгрышей
-  const clearDemoGiveaways = () => {
-    showModal(
-      'confirm',
-      'Удалить демо-розыгрыши',
-      'Удалить все демонстрационные розыгрыши? Останутся только ваши реальные розыгрыши.',
-      () => {
-        localStorage.setItem('wingather_demo_deleted', 'true');
-        setGiveaways(prev => prev.filter(g => !g.isDemo));
-        hideModal();
-        showModal('success', 'Демо удалены', 'Все демонстрационные розыгрыши удалены');
-      },
-      hideModal
-    );
-  };
-
-  const startEdit = (giveaway) => {
-    setEditingGiveaway(giveaway);
-    setFormData({
-      title: giveaway.title,
-      description: giveaway.description,
-      socialNetwork: giveaway.socialNetwork,
-      socialLink: giveaway.socialLink,
-      endDate: giveaway.endDate,
-      isActive: giveaway.isActive,
-      category: giveaway.category
-    });
-  };
-
-  const resetForm = () => {
-    setFormData({
+  // Модальное окно создания розыгрыша
+  const CreateGiveawayModal = () => {
+    const [formData, setFormData] = useState({
       title: '',
       description: '',
       socialNetwork: 'Telegram',
       socialLink: '',
       endDate: '',
-      isActive: true,
-      category: 'Обычный'
+      category: 'Обычный',
+      isActive: true
     });
-    setEditingGiveaway(null);
-  };
 
-  const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString('ru-RU');
-  };
-
-  // Компонент модального окна с информацией о розыгрыше
-  const GiveawayModal = () => {
-    if (!giveawayModal.show || !giveawayModal.giveaway) return null;
-
-    const giveaway = giveawayModal.giveaway;
-    const isVIP = giveaway.category === 'VIP';
-    const isPremium = giveaway.category === 'Премиум';
-    
-    const getModalColors = () => {
-      if (isPremium) {
-        return {
-          bg: 'from-purple-500/20 to-purple-600/20',
-          border: 'border-purple-500/30',
-          button: 'from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700',
-          badge: 'bg-purple-500/20 text-purple-300 border-purple-400/30'
-        };
-      } else if (isVIP) {
-        return {
-          bg: 'from-yellow-500/20 to-amber-500/20',
-          border: 'border-yellow-500/30',
-          button: 'from-yellow-500 to-amber-500 hover:from-yellow-600 hover:to-amber-600',
-          badge: 'bg-yellow-500/20 text-yellow-300 border-yellow-400/30'
-        };
-      } else {
-        return {
-          bg: 'from-blue-500/20 to-blue-600/20',
-          border: 'border-blue-500/30',
-          button: 'from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700',
-          badge: 'bg-blue-500/20 text-blue-300 border-blue-400/30'
-        };
+    const handleSubmit = (e) => {
+      e.preventDefault();
+      if (!formData.title.trim() || !formData.description.trim() || !formData.endDate) {
+        showMessageModal('Ошибка', 'Заполните все обязательные поля', 'error');
+        return;
       }
+      handleCreateGiveaway(formData);
     };
 
-    const colors = getModalColors();
-    const hasValidLink = giveaway.socialLink && giveaway.socialLink.trim();
+    if (!showCreateModal) return null;
 
     return (
-      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-[110]">
-        <div className={'bg-gradient-to-b from-slate-800/95 to-slate-900/95 backdrop-blur-xl border-2 ' + colors.border + ' rounded-2xl w-full max-w-lg shadow-2xl animate-in zoom-in-95 duration-300'}>
-          <div className="relative">
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-[150]">
+        <div className="bg-slate-800/95 backdrop-blur-xl border border-slate-700 rounded-2xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-2xl font-bold text-white">Создать розыгрыш</h3>
             <button
-              onClick={hideGiveawayModal}
-              className="absolute top-4 right-4 w-8 h-8 bg-slate-700/50 hover:bg-slate-600/50 rounded-full flex items-center justify-center text-slate-400 hover:text-white transition-all z-10"
+              onClick={() => {
+                setShowCreateModal(false);
+                setFormData({
+                  title: '',
+                  description: '',
+                  socialNetwork: 'Telegram',
+                  socialLink: '',
+                  endDate: '',
+                  category: 'Обычный',
+                  isActive: true
+                });
+              }}
+              className="text-slate-400 hover:text-white w-8 h-8 rounded-full bg-slate-700/50 hover:bg-slate-600/50 flex items-center justify-center"
             >
               ✕
             </button>
+          </div>
 
-            <div className={'bg-gradient-to-r ' + colors.bg + ' p-6 rounded-t-2xl border-b ' + colors.border}>
-              <div className="flex items-center gap-3 mb-3">
-                <span className={'px-3 py-1 rounded-full text-sm font-medium border ' + colors.badge}>
-                  {giveaway.category}
-                </span>
-                <span className="text-slate-400 text-sm">
-                  👥 {giveaway.participants} участников
-                </span>
-              </div>
-              <h3 className="text-2xl font-bold text-white pr-8">{giveaway.title}</h3>
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div>
+              <label className="block text-white text-sm font-medium mb-2">Название розыгрыша *</label>
+              <input
+                type="text"
+                value={formData.title}
+                onChange={(e) => setFormData({...formData, title: e.target.value})}
+                className="w-full bg-slate-700/50 border border-slate-600 rounded-xl px-4 py-3 text-white placeholder-slate-400 focus:outline-none focus:border-orange-500"
+                placeholder="Введите название розыгрыша"
+                required
+              />
             </div>
 
-            <div className="p-6">
-              <div className="mb-6">
-                <h4 className="text-white font-medium mb-2">Описание розыгрыша:</h4>
-                <p className="text-slate-300 leading-relaxed">{giveaway.description}</p>
+            <div>
+              <label className="block text-white text-sm font-medium mb-2">Описание *</label>
+              <textarea
+                value={formData.description}
+                onChange={(e) => setFormData({...formData, description: e.target.value})}
+                rows={3}
+                className="w-full bg-slate-700/50 border border-slate-600 rounded-xl px-4 py-3 text-white placeholder-slate-400 focus:outline-none focus:border-orange-500 resize-none"
+                placeholder="Опишите призы и условия розыгрыша"
+                required
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-white text-sm font-medium mb-2">Социальная сеть</label>
+                <select
+                  value={formData.socialNetwork}
+                  onChange={(e) => setFormData({...formData, socialNetwork: e.target.value})}
+                  className="w-full bg-slate-700/50 border border-slate-600 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-orange-500"
+                >
+                  <option value="Telegram">Telegram</option>
+                  <option value="YouTube">YouTube</option>
+                  <option value="VK">ВКонтакте</option>
+                  <option value="Instagram">Instagram</option>
+                  <option value="TikTok">TikTok</option>
+                </select>
               </div>
 
-              {/* Блок со ссылкой УБРАН - пользователь переходит только через кнопку "Участвовать" */}
+              <div>
+                <label className="block text-white text-sm font-medium mb-2">Категория</label>
+                <select
+                  value={formData.category}
+                  onChange={(e) => setFormData({...formData, category: e.target.value})}
+                  className="w-full bg-slate-700/50 border border-slate-600 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-orange-500"
+                >
+                  <option value="Обычный">Обычный</option>
+                  <option value="VIP">VIP</option>
+                </select>
+              </div>
+            </div>
 
-              <div className="grid grid-cols-2 gap-4 mb-6">
-                <div className="bg-slate-800/30 rounded-lg p-3 border border-slate-700/30">
-                  <div className="text-slate-400 text-xs mb-1">Платформа</div>
-                  <div className="text-white font-medium">{giveaway.socialNetwork}</div>
-                </div>
-                <div className="bg-slate-800/30 rounded-lg p-3 border border-slate-700/30">
-                  <div className="text-slate-400 text-xs mb-1">Окончание</div>
-                  <div className="text-white font-medium">{formatDate(giveaway.endDate)}</div>
-                </div>
+            <div>
+              <label className="block text-white text-sm font-medium mb-2">Ссылка на канал/группу</label>
+              <input
+                type="url"
+                value={formData.socialLink}
+                onChange={(e) => setFormData({...formData, socialLink: e.target.value})}
+                className="w-full bg-slate-700/50 border border-slate-600 rounded-xl px-4 py-3 text-white placeholder-slate-400 focus:outline-none focus:border-orange-500"
+                placeholder="https://t.me/yourchanne"
+              />
+            </div>
+
+            <div>
+              <label className="block text-white text-sm font-medium mb-2">Дата окончания *</label>
+              <input
+                type="date"
+                value={formData.endDate}
+                onChange={(e) => setFormData({...formData, endDate: e.target.value})}
+                className="w-full bg-slate-700/50 border border-slate-600 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-orange-500"
+                required
+              />
+            </div>
+
+            <div className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                id="isActive"
+                checked={formData.isActive}
+                onChange={(e) => setFormData({...formData, isActive: e.target.checked})}
+                className="w-5 h-5 rounded bg-slate-700 border-slate-600 text-orange-500 focus:ring-orange-500"
+              />
+              <label htmlFor="isActive" className="text-white text-sm">
+                Активировать розыгрыш сразу после создания
+              </label>
+            </div>
+
+            <div className="flex gap-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowCreateModal(false);
+                  setFormData({
+                    title: '',
+                    description: '',
+                    socialNetwork: 'Telegram',
+                    socialLink: '',
+                    endDate: '',
+                    category: 'Обычный',
+                    isActive: true
+                  });
+                }}
+                className="flex-1 bg-slate-600 hover:bg-slate-500 text-white py-3 px-6 rounded-xl transition-colors font-medium"
+              >
+                Отмена
+              </button>
+              <button
+                type="submit"
+                className="flex-1 bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white py-3 px-6 rounded-xl transition-colors font-medium"
+              >
+                Создать розыгрыш
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  };
+
+  // Модальное окно редактирования розыгрыша
+  const EditGiveawayModal = () => {
+    const [formData, setFormData] = useState({
+      title: editingGiveaway?.title || '',
+      description: editingGiveaway?.description || '',
+      socialNetwork: editingGiveaway?.social_network || 'Telegram',
+      socialLink: editingGiveaway?.social_link || '',
+      endDate: editingGiveaway?.end_date || '',
+      category: editingGiveaway?.category || 'Обычный',
+      isActive: editingGiveaway?.is_active || true
+    });
+
+    useEffect(() => {
+      if (editingGiveaway) {
+        setFormData({
+          title: editingGiveaway.title || '',
+          description: editingGiveaway.description || '',
+          socialNetwork: editingGiveaway.social_network || 'Telegram',
+          socialLink: editingGiveaway.social_link || '',
+          endDate: editingGiveaway.end_date || '',
+          category: editingGiveaway.category || 'Обычный',
+          isActive: editingGiveaway.is_active !== undefined ? editingGiveaway.is_active : true
+        });
+      }
+    }, [editingGiveaway]);
+
+    const handleSubmit = (e) => {
+      e.preventDefault();
+      if (!formData.title.trim() || !formData.description.trim() || !formData.endDate) {
+        showMessageModal('Ошибка', 'Заполните все обязательные поля', 'error');
+        return;
+      }
+      handleUpdateGiveaway(editingGiveaway.id, formData);
+    };
+
+    if (!showEditModal || !editingGiveaway) return null;
+
+    return (
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-[150]">
+        <div className="bg-slate-800/95 backdrop-blur-xl border border-slate-700 rounded-2xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-2xl font-bold text-white">Редактировать розыгрыш</h3>
+            <button
+              onClick={() => {
+                setShowEditModal(false);
+                setEditingGiveaway(null);
+              }}
+              className="text-slate-400 hover:text-white w-8 h-8 rounded-full bg-slate-700/50 hover:bg-slate-600/50 flex items-center justify-center"
+            >
+              ✕
+            </button>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div>
+              <label className="block text-white text-sm font-medium mb-2">Название розыгрыша *</label>
+              <input
+                type="text"
+                value={formData.title}
+                onChange={(e) => setFormData({...formData, title: e.target.value})}
+                className="w-full bg-slate-700/50 border border-slate-600 rounded-xl px-4 py-3 text-white placeholder-slate-400 focus:outline-none focus:border-orange-500"
+                placeholder="Введите название розыгрыша"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-white text-sm font-medium mb-2">Описание *</label>
+              <textarea
+                value={formData.description}
+                onChange={(e) => setFormData({...formData, description: e.target.value})}
+                rows={3}
+                className="w-full bg-slate-700/50 border border-slate-600 rounded-xl px-4 py-3 text-white placeholder-slate-400 focus:outline-none focus:border-orange-500 resize-none"
+                placeholder="Опишите призы и условия розыгрыша"
+                required
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-white text-sm font-medium mb-2">Социальная сеть</label>
+                <select
+                  value={formData.socialNetwork}
+                  onChange={(e) => setFormData({...formData, socialNetwork: e.target.value})}
+                  className="w-full bg-slate-700/50 border border-slate-600 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-orange-500"
+                >
+                  <option value="Telegram">Telegram</option>
+                  <option value="YouTube">YouTube</option>
+                  <option value="VK">ВКонтакте</option>
+                  <option value="Instagram">Instagram</option>
+                  <option value="TikTok">TikTok</option>
+                </select>
               </div>
 
-              {!hasValidLink && (
-                <div className="mb-6 bg-amber-900/20 border border-amber-500/30 rounded-lg p-3">
-                  <div className="text-amber-300 text-sm flex items-center gap-2">
-                    <span>⚠️</span>
-                    Администратор не добавил ссылку на этот розыгрыш
+              <div>
+                <label className="block text-white text-sm font-medium mb-2">Категория</label>
+                <select
+                  value={formData.category}
+                  onChange={(e) => setFormData({...formData, category: e.target.value})}
+                  className="w-full bg-slate-700/50 border border-slate-600 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-orange-500"
+                >
+                  <option value="Обычный">Обычный</option>
+                  <option value="VIP">VIP</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-white text-sm font-medium mb-2">Ссылка на канал/группу</label>
+              <input
+                type="url"
+                value={formData.socialLink}
+                onChange={(e) => setFormData({...formData, socialLink: e.target.value})}
+                className="w-full bg-slate-700/50 border border-slate-600 rounded-xl px-4 py-3 text-white placeholder-slate-400 focus:outline-none focus:border-orange-500"
+                placeholder="https://t.me/yourchannel"
+              />
+            </div>
+
+            <div>
+              <label className="block text-white text-sm font-medium mb-2">Дата окончания *</label>
+              <input
+                type="date"
+                value={formData.endDate}
+                onChange={(e) => setFormData({...formData, endDate: e.target.value})}
+                className="w-full bg-slate-700/50 border border-slate-600 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-orange-500"
+                required
+              />
+            </div>
+
+            <div className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                id="editIsActive"
+                checked={formData.isActive}
+                onChange={(e) => setFormData({...formData, isActive: e.target.checked})}
+                className="w-5 h-5 rounded bg-slate-700 border-slate-600 text-orange-500 focus:ring-orange-500"
+              />
+              <label htmlFor="editIsActive" className="text-white text-sm">
+                Розыгрыш активен
+              </label>
+            </div>
+
+            <div className="bg-slate-700/20 rounded-xl p-4">
+              <h4 className="text-white font-medium mb-2">Статистика</h4>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-300">Участников:</span>
+                <span className="text-white font-bold">{editingGiveaway.participants_count || 0}</span>
+              </div>
+            </div>
+
+            <div className="flex gap-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowEditModal(false);
+                  setEditingGiveaway(null);
+                }}
+                className="flex-1 bg-slate-600 hover:bg-slate-500 text-white py-3 px-6 rounded-xl transition-colors font-medium"
+              >
+                Отмена
+              </button>
+              <button
+                type="submit"
+                className="flex-1 bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white py-3 px-6 rounded-xl transition-colors font-medium"
+              >
+                Сохранить изменения
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  };
+
+  // Модальное окно подтверждения удаления
+  const DeleteConfirmModal = () => {
+    if (!showDeleteConfirm || !deletingGiveaway) return null;
+
+    return (
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-[150]">
+        <div className="bg-slate-800/95 backdrop-blur-xl border border-slate-700 rounded-2xl p-6 w-full max-w-md">
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-xl font-bold text-white">Подтвердите удаление</h3>
+            <button
+              onClick={() => {
+                setShowDeleteConfirm(false);
+                setDeletingGiveaway(null);
+              }}
+              className="text-slate-400 hover:text-white w-8 h-8 rounded-full bg-slate-700/50 hover:bg-slate-600/50 flex items-center justify-center"
+            >
+              ✕
+            </button>
+          </div>
+
+          <div className="bg-slate-700/30 rounded-xl p-4 mb-6">
+            <h4 className="text-white font-bold mb-2">{deletingGiveaway.title}</h4>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-300">Категория:</span>
+                <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                  deletingGiveaway.category === 'VIP' 
+                    ? 'bg-yellow-500/20 text-yellow-400' 
+                    : 'bg-blue-500/20 text-blue-400'
+                }`}>
+                  {deletingGiveaway.category}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-300">Участников:</span>
+                <span className="text-white font-bold">{deletingGiveaway.participants_count || 0}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-300">Статус:</span>
+                <span className={`px-2 py-1 rounded-full text-xs ${
+                  deletingGiveaway.is_active 
+                    ? 'bg-green-500/20 text-green-400' 
+                    : 'bg-red-500/20 text-red-400'
+                }`}>
+                  {deletingGiveaway.is_active ? 'Активен' : 'Неактивен'}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 mb-6">
+            <p className="text-red-200 text-sm text-center">
+              <strong>Внимание!</strong> Это действие нельзя отменить. 
+              Розыгрыш и все связанные с ним данные будут удалены навсегда.
+            </p>
+          </div>
+
+          <div className="flex gap-4">
+            <button
+              onClick={() => {
+                setShowDeleteConfirm(false);
+                setDeletingGiveaway(null);
+              }}
+              className="flex-1 bg-slate-600 hover:bg-slate-500 text-white py-3 px-6 rounded-xl transition-colors font-medium"
+            >
+              Отмена
+            </button>
+            <button
+              onClick={() => handleDeleteGiveaway(deletingGiveaway.id)}
+              className="flex-1 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white py-3 px-6 rounded-xl transition-colors font-medium"
+            >
+              Удалить навсегда
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Модальное окно управления премиум розыгрышем
+  const PremiumModal = () => {
+    const [formData, setFormData] = useState({
+      title: premiumGiveaway?.title || '',
+      description: premiumGiveaway?.description || '',
+      socialNetwork: premiumGiveaway?.social_network || 'YouTube',
+      socialLink: premiumGiveaway?.social_link || '',
+      endDate: premiumGiveaway?.end_date || '',
+      isActive: premiumGiveaway?.is_active || false
+    });
+
+    useEffect(() => {
+      if (premiumGiveaway) {
+        setFormData({
+          title: premiumGiveaway.title || '',
+          description: premiumGiveaway.description || '',
+          socialNetwork: premiumGiveaway.social_network || 'YouTube',
+          socialLink: premiumGiveaway.social_link || '',
+          endDate: premiumGiveaway.end_date || '',
+          isActive: premiumGiveaway.is_active || false
+        });
+      }
+    }, [premiumGiveaway]);
+
+    const handleSubmit = (e) => {
+      e.preventDefault();
+      if (!formData.title.trim() || !formData.description.trim() || !formData.endDate) {
+        showMessageModal('Ошибка', 'Заполните все обязательные поля', 'error');
+        return;
+      }
+      handleUpdatePremium(formData);
+    };
+
+    if (!showPremiumModal) return null;
+
+    return (
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-[150]">
+        <div className="bg-slate-800/95 backdrop-blur-xl border border-slate-700 rounded-2xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+          <div className="flex justify-between items-center mb-6">
+            <div className="flex items-center gap-3">
+              <span className="bg-gradient-to-r from-purple-500 to-pink-500 text-white px-3 py-1 rounded-full text-sm font-medium">
+                PREMIUM
+              </span>
+              <h3 className="text-2xl font-bold text-white">Премиум розыгрыш</h3>
+            </div>
+            <button
+              onClick={() => setShowPremiumModal(false)}
+              className="text-slate-400 hover:text-white w-8 h-8 rounded-full bg-slate-700/50 hover:bg-slate-600/50 flex items-center justify-center"
+            >
+              ✕
+            </button>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div>
+              <label className="block text-white text-sm font-medium mb-2">Название премиум розыгрыша *</label>
+              <input
+                type="text"
+                value={formData.title}
+                onChange={(e) => setFormData({...formData, title: e.target.value})}
+                className="w-full bg-slate-700/50 border border-slate-600 rounded-xl px-4 py-3 text-white placeholder-slate-400 focus:outline-none focus:border-purple-500"
+                placeholder="Введите название премиум розыгрыша"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-white text-sm font-medium mb-2">Описание *</label>
+              <textarea
+                value={formData.description}
+                onChange={(e) => setFormData({...formData, description: e.target.value})}
+                rows={4}
+                className="w-full bg-slate-700/50 border border-slate-600 rounded-xl px-4 py-3 text-white placeholder-slate-400 focus:outline-none focus:border-purple-500 resize-none"
+                placeholder="Опишите супер-приз и условия премиум розыгрыша"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-white text-sm font-medium mb-2">Социальная сеть</label>
+              <select
+                value={formData.socialNetwork}
+                onChange={(e) => setFormData({...formData, socialNetwork: e.target.value})}
+                className="w-full bg-slate-700/50 border border-slate-600 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-purple-500"
+              >
+                <option value="YouTube">YouTube</option>
+                <option value="Telegram">Telegram</option>
+                <option value="VK">ВКонтакте</option>
+                <option value="Instagram">Instagram</option>
+                <option value="TikTok">TikTok</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-white text-sm font-medium mb-2">Ссылка на канал/группу *</label>
+              <input
+                type="url"
+                value={formData.socialLink}
+                onChange={(e) => setFormData({...formData, socialLink: e.target.value})}
+                className="w-full bg-slate-700/50 border border-slate-600 rounded-xl px-4 py-3 text-white placeholder-slate-400 focus:outline-none focus:border-purple-500"
+                placeholder="https://youtube.com/@yourchannel"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-white text-sm font-medium mb-2">Дата окончания *</label>
+              <input
+                type="date"
+                value={formData.endDate}
+                onChange={(e) => setFormData({...formData, endDate: e.target.value})}
+                className="w-full bg-slate-700/50 border border-slate-600 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-purple-500"
+                required
+              />
+            </div>
+
+            <div className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                id="premiumIsActive"
+                checked={formData.isActive}
+                onChange={(e) => setFormData({...formData, isActive: e.target.checked})}
+                className="w-5 h-5 rounded bg-slate-700 border-slate-600 text-purple-500 focus:ring-purple-500"
+              />
+              <label htmlFor="premiumIsActive" className="text-white text-sm">
+                Показывать премиум розыгрыш на главной странице
+              </label>
+            </div>
+
+            {premiumGiveaway && (
+              <div className="bg-slate-700/20 rounded-xl p-4">
+                <h4 className="text-white font-medium mb-3">Статистика премиум розыгрыша</h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-purple-500/10 rounded-lg p-3">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-2xl">👥</span>
+                      <span className="text-purple-200 text-sm">Участники</span>
+                    </div>
+                    <span className="text-white text-xl font-bold">{premiumGiveaway.participants_count || 0}</span>
+                  </div>
+                  <div className="bg-purple-500/10 rounded-lg p-3">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-2xl">📊</span>
+                      <span className="text-purple-200 text-sm">Статус</span>
+                    </div>
+                    <span className={`text-sm font-medium px-2 py-1 rounded-full ${
+                      premiumGiveaway.is_active 
+                        ? 'bg-green-500/20 text-green-300' 
+                        : 'bg-red-500/20 text-red-300'
+                    }`}>
+                      {premiumGiveaway.is_active ? 'Активен' : 'Неактивен'}
+                    </span>
                   </div>
                 </div>
-              )}
-
-              <div className="flex gap-3">
-                <button
-                  onClick={hideGiveawayModal}
-                  className="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-3 px-4 rounded-xl transition-all duration-200 font-medium"
-                >
-                  Закрыть
-                </button>
-                <button
-                  onClick={() => handleParticipate(giveaway.id === 'premium' ? 'premium' : giveaway.id, true)}
-                  className={'flex-2 bg-gradient-to-r ' + colors.button + ' text-white py-3 px-6 rounded-xl transition-all duration-200 font-medium shadow-lg min-w-[120px]'}
-                >
-                  🎯 Участвовать
-                </button>
               </div>
+            )}
+
+            <div className="flex gap-4">
+              <button
+                type="button"
+                onClick={() => setShowPremiumModal(false)}
+                className="flex-1 bg-slate-600 hover:bg-slate-500 text-white py-3 px-6 rounded-xl transition-colors font-medium"
+              >
+                Отмена
+              </button>
+              <button
+                type="submit"
+                className="flex-1 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white py-3 px-6 rounded-xl transition-colors font-medium"
+              >
+                Сохранить премиум розыгрыш
+              </button>
             </div>
+          </form>
+        </div>
+      </div>
+    );
+  };
+
+  // Модальное окно просмотра участников
+  const ParticipantsModal = () => {
+    if (!showParticipantsModal || !viewingParticipants) return null;
+
+    const isPremium = viewingParticipants.id === 'premium';
+
+    return (
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-[150]">
+        <div className="bg-slate-800/95 backdrop-blur-xl border border-slate-700 rounded-2xl p-6 w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+          <div className="flex justify-between items-center mb-6">
+            <div className="flex items-center gap-3">
+              <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                isPremium 
+                  ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white' 
+                  : viewingParticipants.category === 'VIP'
+                    ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30' 
+                    : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+              }`}>
+                {isPremium ? 'PREMIUM' : viewingParticipants.category}
+              </span>
+              <h3 className="text-xl font-bold text-white">Участники</h3>
+            </div>
+            <button
+              onClick={() => {
+                setShowParticipantsModal(false);
+                setViewingParticipants(null);
+                setParticipantsData([]);
+              }}
+              className="text-slate-400 hover:text-white w-8 h-8 rounded-full bg-slate-700/50 hover:bg-slate-600/50 flex items-center justify-center"
+            >
+              ✕
+            </button>
+          </div>
+
+          <div className="bg-slate-700/30 rounded-xl p-4 mb-6">
+            <h4 className="text-white font-bold text-lg mb-2">{viewingParticipants.title}</h4>
+            <div className="flex items-center justify-between">
+              <span className="text-slate-300">Всего участников:</span>
+              <span className="text-white font-bold text-xl">{participantsData.length}</span>
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto">
+            {participantsData.length === 0 ? (
+              <div className="text-center py-12">
+                <div className="text-6xl mb-4">😴</div>
+                <h4 className="text-white text-lg font-medium mb-2">Пока нет участников</h4>
+                <p className="text-slate-400 text-sm">
+                  Как только кто-то присоединится к розыгрышу, они появятся здесь
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {participantsData.map((participant, index) => (
+                  <div key={participant.id} className="bg-slate-700/30 rounded-lg p-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-gradient-to-r from-orange-500 to-red-500 rounded-full flex items-center justify-center">
+                          <span className="text-white font-bold">{participant.user_name[0].toUpperCase()}</span>
+                        </div>
+                        <div>
+                          <h5 className="text-white font-medium">{participant.user_name}</h5>
+                          <p className="text-slate-400 text-sm">Участник #{index + 1}</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-slate-400 text-xs">Присоединился</p>
+                        <p className="text-white text-sm">{formatDate(participant.created_at)}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>
     );
   };
 
-  // Компонент обычного модального окна
-  const Modal = () => {
-    if (!modal.show) return null;
+  // Детальное модальное окно розыгрыша
+  const GiveawayModal = () => {
+    if (!showGiveawayModal || !selectedGiveaway) return null;
 
-    const getModalIcon = () => {
-      switch (modal.type) {
-        case 'success': return '✅';
-        case 'error': return '❌';
-        case 'confirm': return '❓';
-        default: return 'ℹ️';
-      }
-    };
-
-    const getModalColors = () => {
-      switch (modal.type) {
-        case 'success': return 'border-green-500/50 bg-green-900/20';
-        case 'error': return 'border-red-500/50 bg-red-900/20';
-        case 'confirm': return 'border-yellow-500/50 bg-yellow-900/20';
-        default: return 'border-blue-500/50 bg-blue-900/20';
-      }
-    };
+    const isPremium = selectedGiveaway.id === 'premium';
 
     return (
-      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
-        <div className={`bg-slate-800/95 backdrop-blur-xl border-2 ${getModalColors()} rounded-2xl w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-300`}>
-          <div className="p-6">
-            <div className="flex items-center gap-3 mb-4">
-              <span className="text-2xl">{getModalIcon()}</span>
-              <h3 className="text-xl font-bold text-white">{modal.title}</h3>
-            </div>
-            
-            <p className="text-slate-300 mb-6 leading-relaxed">{modal.message}</p>
-            
-            <div className="flex gap-3">
-              {modal.type === 'confirm' ? (
-                <>
-                  <button
-                    onClick={modal.onCancel}
-                    className="flex-1 bg-slate-600 hover:bg-slate-500 text-white py-3 px-4 rounded-xl transition-all duration-200 font-medium"
-                  >
-                    Отмена
-                  </button>
-                  <button
-                    onClick={modal.onConfirm}
-                    className="flex-1 bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white py-3 px-4 rounded-xl transition-all duration-200 font-medium shadow-lg"
-                  >
-                    Подтвердить
-                  </button>
-                </>
-              ) : (
-                <button
-                  onClick={modal.onConfirm || hideModal}
-                  className="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white py-3 px-4 rounded-xl transition-all duration-200 font-medium shadow-lg"
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-[150]">
+        <div className="bg-slate-800/95 backdrop-blur-xl border border-slate-700 rounded-2xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+          <div className="flex justify-between items-center mb-6">
+            <div className="flex items-center gap-3">
+              <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                isPremium 
+                  ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white' 
+                  : selectedGiveaway.category === 'VIP'
+                    ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30' 
+                    : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+              }`}>
+                {isPremium ? 'PREMIUM' : selectedGiveaway.category}
+              </span>
+              {isAdminAuthenticated && (
+                <button 
+                  onClick={() => setShowAdminLogin(true)}
+                  className="text-xs text-slate-400 hover:text-white transition-colors border border-slate-700/50 hover:border-slate-600/50 px-3 py-1 rounded-full"
                 >
-                  ОК
+                  ⚙️ Админ
+                </button>
+              </>
+            )}
+          </div>
+        </footer>
+      </div>
+    </>
+  );
+}
+
+export default App;
+                  onClick={() => {
+                    setViewingParticipants(selectedGiveaway);
+                    loadParticipants(selectedGiveaway.id, isPremium);
+                    setShowParticipantsModal(true);
+                  }}
+                  className="text-xs text-slate-400 hover:text-white transition-colors border border-slate-700/50 hover:border-slate-600/50 px-2 py-1 rounded-full"
+                >
+                  👥 Участники
                 </button>
               )}
             </div>
+            <button
+              onClick={() => setShowGiveawayModal(false)}
+              className="text-slate-400 hover:text-white w-8 h-8 rounded-full bg-slate-700/50 hover:bg-slate-600/50 flex items-center justify-center"
+            >
+              ✕
+            </button>
           </div>
-        </div>
-      </div>
-    );
-  };
 
-  // Отображение загрузки
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-slate-900 to-black flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-orange-500 mx-auto mb-4"></div>
-          <p className="text-slate-300 text-lg">Загрузка розыгрышей...</p>
-        </div>
-      </div>
-    );
-  }
+          <h2 className="text-3xl font-bold text-white mb-4 text-center">
+            {selectedGiveaway.title}
+          </h2>
 
-  // Отображение ошибки
-  if (error) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-slate-900 to-black flex items-center justify-center">
-        <div className="text-center max-w-md">
-          <div className="text-red-500 text-6xl mb-4">⚠️</div>
-          <h2 className="text-2xl font-bold text-white mb-4">Ошибка загрузки</h2>
-          <p className="text-slate-300 mb-6">{error}</p>
+          <div className="bg-slate-700/30 rounded-xl p-4 mb-6">
+            <p className="text-slate-300 leading-relaxed text-center">
+              {selectedGiveaway.description}
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4 mb-6">
+            <div className="bg-slate-700/20 rounded-xl p-4">
+              <h4 className="text-white font-medium mb-2">Социальная сеть</h4>
+              <p className="text-slate-300">{selectedGiveaway.social_network}</p>
+            </div>
+            <div className="bg-slate-700/20 rounded-xl p-4">
+              <h4 className="text-white font-medium mb-2">Окончание</h4>
+              <p className="text-slate-300">{formatDate(selectedGiveaway.end_date)}</p>
+            </div>
+          </div>
+
+          <div className="bg-slate-700/20 rounded-xl p-4 mb-6">
+            <h4 className="text-white font-medium mb-2">Участники</h4>
+            <div className="flex items-center gap-2">
+              <span className="text-2xl">👥</span>
+              <span className="text-xl font-bold text-white">
+                {selectedGiveaway.participants_count || 0} участников
+              </span>
+            </div>
+          </div>
+
           <button
-            onClick={loadData}
-            className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white py-3 px-6 rounded-xl transition-all duration-200 font-medium shadow-lg"
+            onClick={() => {
+              handleParticipate(selectedGiveaway, isPremium);
+              setShowGiveawayModal(false);
+            }}
+            className={`w-full py-4 px-6 rounded-xl transition-all duration-200 font-medium text-lg ${
+              isPremium
+                ? 'bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white'
+                : selectedGiveaway.category === 'VIP'
+                  ? 'bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-600 hover:to-orange-600 text-white'
+                  : 'bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white'
+            }`}
           >
-            Повторить попытку
+            Участвовать в розыгрыше
           </button>
         </div>
       </div>
     );
-  }
+  };
 
-  // Страница входа
+  // Компонент админского входа
+  const AdminLoginModal = () => {
+    if (!showAdminLogin) return null;
+
+    return (
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-[200]">
+        <div className="bg-slate-800/95 backdrop-blur-xl border border-slate-700 rounded-2xl p-6 w-full max-w-md">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-xl font-bold text-white">Вход в админ панель</h3>
+            <button
+              onClick={() => setShowAdminLogin(false)}
+              className="text-slate-400 hover:text-white w-8 h-8 rounded-full bg-slate-700/50 hover:bg-slate-600/50 flex items-center justify-center"
+            >
+              ✕
+            </button>
+          </div>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-white text-sm font-medium mb-2">Пароль администратора</label>
+              <input
+                type="password"
+                value={adminPassword}
+                onChange={(e) => setAdminPassword(e.target.value)}
+                className="w-full bg-slate-700/50 border border-slate-600 rounded-xl px-4 py-3 text-white"
+                placeholder="Введите пароль"
+                onKeyPress={(e) => e.key === 'Enter' && handleAdminLogin()}
+              />
+            </div>
+            <button
+              onClick={handleAdminLogin}
+              className="w-full bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-xl transition-colors"
+            >
+              Войти
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Профиль пользователя
+  const UserProfile = () => {
+    if (!showUserProfile || !localUser) return null;
+
+    return (
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-[150]">
+        <div className="bg-slate-800/95 backdrop-blur-xl border border-slate-700 rounded-2xl p-6 w-full max-w-md">
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-xl font-bold text-white">Профиль пользователя</h3>
+            <button
+              onClick={() => setShowUserProfile(false)}
+              className="text-slate-400 hover:text-white w-8 h-8 rounded-full bg-slate-700/50 hover:bg-slate-600/50 flex items-center justify-center"
+            >
+              ✕
+            </button>
+          </div>
+
+          <div className="text-center mb-6">
+            <div className="w-20 h-20 bg-gradient-to-r from-green-500 to-emerald-500 rounded-full flex items-center justify-center mx-auto mb-4">
+              <span className="text-white text-2xl font-bold">{localUser.nickname[0].toUpperCase()}</span>
+            </div>
+            <h4 className="text-white text-xl font-bold">{localUser.nickname}</h4>
+            <p className="text-slate-400 text-sm">Пользователь с {formatDate(localUser.createdAt)}</p>
+          </div>
+
+          <button
+            onClick={handleLocalLogout}
+            className="w-full bg-red-500 hover:bg-red-600 text-white py-3 px-4 rounded-xl transition-colors font-medium"
+          >
+            Выйти из аккаунта
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  // Компонент авторизации
+  const AuthView = () => {
+    const [isLogin, setIsLogin] = useState(true);
+    const [nickname, setNickname] = useState('');
+    const [password, setPassword] = useState('');
+    const [loading, setLoading] = useState(false);
+
+    const handleSubmit = async (e) => {
+      e.preventDefault();
+      if (!nickname.trim() || !password.trim()) {
+        showMessageModal('Ошибка', 'Заполните все поля', 'error');
+        return;
+      }
+
+      setLoading(true);
+      
+      try {
+        if (isLogin) {
+          // Вход
+          const user = await userAPI.findByNickname(nickname.trim());
+          if (user && user.password_hash === password) {
+            const userData = { 
+              id: user.id, 
+              nickname: user.nickname, 
+              createdAt: user.created_at 
+            };
+            setLocalUser(userData);
+            localStorage.setItem('wingather_user', JSON.stringify(userData));
+            setCurrentView('main');
+            showMessageModal('Добро пожаловать!', `Вы успешно вошли как ${nickname}`, 'success');
+          } else {
+            showMessageModal('Ошибка', 'Неверный никнейм или пароль', 'error');
+          }
+        } else {
+          // Регистрация
+          const userData = await userAPI.create(nickname.trim(), password);
+          const userForStorage = { 
+            id: userData.id, 
+            nickname: userData.nickname, 
+            createdAt: userData.created_at 
+          };
+          setLocalUser(userForStorage);
+          localStorage.setItem('wingather_user', JSON.stringify(userForStorage));
+          setCurrentView('main');
+          showMessageModal('Регистрация успешна!', `Добро пожаловать, ${nickname}!`, 'success');
+        }
+      } catch (error) {
+        showMessageModal('Ошибка', error.message || 'Произошла ошибка', 'error');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-slate-900 to-black flex items-center justify-center p-4">
+        <div className="bg-slate-800/50 backdrop-blur-xl border border-slate-700 rounded-2xl p-8 w-full max-w-md">
+          <div className="text-center mb-8">
+            <h1 className="text-4xl font-bold font-russo bg-gradient-to-r from-orange-500 to-red-500 bg-clip-text text-transparent mb-2">
+              WinGather
+            </h1>
+            <p className="text-slate-400">{isLogin ? 'Вход в аккаунт' : 'Создание аккаунта'}</p>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="block text-white text-sm font-medium mb-2">Никнейм</label>
+              <input
+                type="text"
+                value={nickname}
+                onChange={(e) => setNickname(e.target.value)}
+                className="w-full bg-slate-700/50 border border-slate-600 rounded-xl px-4 py-3 text-white placeholder-slate-400 focus:outline-none focus:border-orange-500"
+                placeholder="Введите никнейм"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-white text-sm font-medium mb-2">Пароль</label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full bg-slate-700/50 border border-slate-600 rounded-xl px-4 py-3 text-white placeholder-slate-400 focus:outline-none focus:border-orange-500"
+                placeholder="Введите пароль"
+                required
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 disabled:from-gray-500 disabled:to-gray-600 text-white py-3 px-6 rounded-xl transition-all duration-200 font-medium"
+            >
+              {loading ? 'Загрузка...' : (isLogin ? 'Войти' : 'Зарегистрироваться')}
+            </button>
+          </form>
+
+          <div className="mt-6 text-center">
+            <button
+              onClick={() => setIsLogin(!isLogin)}
+              className="text-orange-400 hover:text-orange-300 transition-colors"
+            >
+              {isLogin ? 'Нет аккаунта? Зарегистрируйтесь' : 'Есть аккаунт? Войдите'}
+            </button>
+          </div>
+
+          <div className="mt-4 text-center">
+            <button
+              onClick={() => setCurrentView('main')}
+              className="text-slate-400 hover:text-white transition-colors text-sm"
+            >
+              ← Вернуться на главную
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Админ-панель
+  const AdminView = () => {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-slate-900 to-black p-6 pb-20">
+        <div className="max-w-6xl mx-auto">
+          <div className="flex items-center justify-between mb-8">
+            <h1 className="text-4xl font-bold font-russo bg-gradient-to-r from-orange-500 to-red-500 bg-clip-text text-transparent">
+              Админ-панель
+            </h1>
+            <button
+              onClick={() => setCurrentView('main')}
+              className="bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-xl transition-colors"
+            >
+              ← На главную
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            <button
+              onClick={() => setShowCreateModal(true)}
+              className="bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white p-6 rounded-2xl transition-all duration-200 text-left"
+            >
+              <h3 className="text-xl font-bold mb-2">Создать розыгрыш</h3>
+              <p className="text-green-100">Добавить новый розыгрыш для пользователей</p>
+            </button>
+
+            <button
+              onClick={() => setShowPremiumModal(true)}
+              className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white p-6 rounded-2xl transition-all duration-200 text-left"
+            >
+              <h3 className="text-xl font-bold mb-2">Премиум розыгрыш</h3>
+              <p className="text-purple-100">Настроить премиум розыгрыш</p>
+            </button>
+          </div>
+
+          <div className="bg-slate-800/50 backdrop-blur-xl border border-slate-700 rounded-2xl p-6">
+            <h2 className="text-2xl font-bold text-white mb-6">Управление розыгрышами</h2>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {giveaways.map((giveaway) => (
+                <div key={giveaway.id} className="bg-slate-700/30 rounded-xl p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                      giveaway.category === 'VIP' 
+                        ? 'bg-yellow-500/20 text-yellow-400' 
+                        : 'bg-blue-500/20 text-blue-400'
+                    }`}>
+                      {giveaway.category}
+                    </span>
+                    <span className={`px-2 py-1 rounded-full text-xs ${
+                      giveaway.is_active 
+                        ? 'bg-green-500/20 text-green-400' 
+                        : 'bg-red-500/20 text-red-400'
+                    }`}>
+                      {giveaway.is_active ? 'Активен' : 'Неактивен'}
+                    </span>
+                  </div>
+                  
+                  <h3 className="text-white font-bold mb-2">{giveaway.title}</h3>
+                  <p className="text-slate-300 text-sm mb-3 line-clamp-2">{giveaway.description}</p>
+                  
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-slate-400 text-xs">До {formatDate(giveaway.end_date)}</span>
+                    <span className="text-slate-400 text-xs">{giveaway.participants_count || 0} участников</span>
+                  </div>
+
+                  <div className="flex gap-2 mb-2">
+                    <button
+                      onClick={() => {
+                        setEditingGiveaway(giveaway);
+                        setShowEditModal(true);
+                      }}
+                      className="flex-1 bg-blue-500 hover:bg-blue-600 text-white py-2 px-3 rounded-lg text-sm transition-colors"
+                    >
+                      Редактировать
+                    </button>
+                    <button
+                      onClick={() => {
+                        setDeletingGiveaway(giveaway);
+                        setShowDeleteConfirm(true);
+                      }}
+                      className="flex-1 bg-red-500 hover:bg-red-600 text-white py-2 px-3 rounded-lg text-sm transition-colors"
+                    >
+                      Удалить
+                    </button>
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      setViewingParticipants(giveaway);
+                      loadParticipants(giveaway.id);
+                      setShowParticipantsModal(true);
+                    }}
+                    className="w-full bg-slate-600 hover:bg-slate-500 text-white py-2 px-3 rounded-lg text-sm transition-colors"
+                  >
+                    👥 Участники ({giveaway.participants_count || 0})
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Рендер в зависимости от текущего вида
   if (currentView === 'login') {
     return (
       <>
         <Modal />
-        <div className="min-h-screen bg-gradient-to-br from-gray-900 via-slate-900 to-black flex items-center justify-center p-4">
-          <div className="bg-slate-800/50 backdrop-blur-xl border border-slate-700 rounded-2xl p-8 w-full max-w-md shadow-2xl">
-            <div className="text-center mb-8">
-              <h1 className="text-4xl font-bold font-russo bg-gradient-to-r from-orange-500 to-red-500 bg-clip-text text-transparent mb-2">
-                WinGather
-              </h1>
-              <p className="text-slate-400">Войдите или создайте профиль</p>
-            </div>
-
-            <div className="space-y-4 mb-6">
-              <div>
-                <label className="block text-slate-300 text-sm font-medium mb-2">Никнейм</label>
-                <input
-                  type="text"
-                  value={loginForm.nickname}
-                  onChange={(e) => setLoginForm(prev => ({ 
-                    ...prev, 
-                    nickname: e.target.value 
-                  }))}
-                  className="w-full bg-slate-700/50 border border-slate-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all"
-                  placeholder="Введите никнейм"
-                  maxLength={20}
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-300 text-sm font-medium mb-2">Пароль</label>
-                <input
-                  type="password"
-                  value={loginForm.password}
-                  onChange={(e) => setLoginForm(prev => ({ 
-                    ...prev, 
-                    password: e.target.value 
-                  }))}
-                  className="w-full bg-slate-700/50 border border-slate-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all"
-                  placeholder="Введите пароль"
-                  onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
-                />
-              </div>
-            </div>
-
-            <div className="space-y-3 mb-6">
-              <button
-                onClick={handleLogin}
-                className="w-full bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white py-3 px-4 rounded-xl transition-all duration-200 font-medium shadow-lg transform hover:scale-[1.02]"
-              >
-                Войти / Создать профиль
-              </button>
-
-              <button
-                onClick={() => setCurrentView('public')}
-                className="w-full bg-slate-600 hover:bg-slate-500 text-white py-3 px-4 rounded-xl transition-all duration-200 font-medium"
-              >
-                Вернуться назад
-              </button>
-            </div>
-
-            <div className="text-xs text-slate-500 text-center">
-              Если никнейм новый - будет создан профиль.<br />
-              Если существующий - требуется правильный пароль.
-            </div>
-          </div>
-        </div>
+        <AdminLoginModal />
+        <AuthView />
       </>
     );
   }
 
-  // Админ-панель
-  if (currentView === 'admin' && isAuthenticated) {
+  if (currentView === 'admin' && isAdminAuthenticated) {
     return (
       <>
         <Modal />
-        <div className="min-h-screen bg-gradient-to-br from-gray-900 via-slate-900 to-black p-4">
-          <div className="max-w-6xl mx-auto">
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
-              <div>
-                <h1 className="text-3xl md:text-4xl font-bold font-russo bg-gradient-to-r from-orange-500 to-red-500 bg-clip-text text-transparent mb-2">
-                  Админ-панель WinGather
-                </h1>
-                <p className="text-slate-400">Управление розыгрышами</p>
-              </div>
-              
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setCurrentView('public')}
-                  className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
-                >
-                  Публичная страница
-                </button>
-                <button
-                  onClick={handleLogout}
-                  className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
-                >
-                  Выход
-                </button>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
-              <div className="bg-slate-800/50 backdrop-blur-xl border border-slate-700 rounded-2xl p-6">
-                <h2 className="text-2xl font-bold text-white mb-6">
-                  {editingGiveaway ? 'Редактировать розыгрыш' : 'Создать розыгрыш'}
-                </h2>
-                
-                <div className="space-y-4 mb-6">
-                  <div>
-                    <label className="block text-slate-300 text-sm font-medium mb-2">Название</label>
-                    <input
-                      type="text"
-                      value={formData.title}
-                      onChange={(e) => setFormData(prev => ({ 
-                        ...prev, 
-                        title: e.target.value 
-                      }))}
-                      className="w-full bg-slate-700/50 border border-slate-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
-                      placeholder="Название розыгрыша"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-slate-300 text-sm font-medium mb-2">Описание</label>
-                    <textarea
-                      value={formData.description}
-                      onChange={(e) => setFormData(prev => ({ 
-                        ...prev, 
-                        description: e.target.value 
-                      }))}
-                      rows="3"
-                      className="w-full bg-slate-700/50 border border-slate-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
-                      placeholder="Описание розыгрыша"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-slate-300 text-sm font-medium mb-2">Платформа</label>
-                      <select
-                        value={formData.socialNetwork}
-                        onChange={(e) => setFormData(prev => ({ 
-                          ...prev, 
-                          socialNetwork: e.target.value 
-                        }))}
-                        className="w-full bg-slate-700/50 border border-slate-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
-                      >
-                        <option value="Telegram">Telegram</option>
-                        <option value="VK">VK</option>
-                        <option value="YouTube">YouTube</option>
-                        <option value="Instagram">Instagram</option>
-                        <option value="Discord">Discord</option>
-                        <option value="TikTok">TikTok</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-slate-300 text-sm font-medium mb-2">Категория</label>
-                      <select
-                        value={formData.category}
-                        onChange={(e) => setFormData(prev => ({ 
-                          ...prev, 
-                          category: e.target.value 
-                        }))}
-                        className="w-full bg-slate-700/50 border border-slate-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
-                      >
-                        <option value="Обычный">Обычный</option>
-                        <option value="VIP">VIP</option>
-                        <option value="Премиум">Премиум</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-slate-300 text-sm font-medium mb-2">Ссылка на розыгрыш</label>
-                    <input
-                      type="url"
-                      value={formData.socialLink}
-                      onChange={(e) => setFormData(prev => ({ 
-                        ...prev, 
-                        socialLink: e.target.value 
-                      }))}
-                      className="w-full bg-slate-700/50 border border-slate-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
-                      placeholder="https://..."
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-slate-300 text-sm font-medium mb-2">Дата окончания</label>
-                    <input
-                      type="date"
-                      value={formData.endDate}
-                      onChange={(e) => setFormData(prev => ({ 
-                        ...prev, 
-                        endDate: e.target.value 
-                      }))}
-                      className="w-full bg-slate-700/50 border border-slate-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
-                    />
-                  </div>
-
-                  <div className="flex items-center">
-                    <label className="flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={formData.isActive}
-                        onChange={(e) => setFormData(prev => ({ 
-                          ...prev, 
-                          isActive: e.target.checked 
-                        }))}
-                        className="sr-only"
-                      />
-                      <div className={`relative w-12 h-6 rounded-full transition-colors ${formData.isActive ? 'bg-orange-500' : 'bg-slate-600'}`}>
-                        <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${formData.isActive ? 'translate-x-6' : 'translate-x-0'}`} />
-                      </div>
-                      <span className="ml-3 text-slate-300">Активный розыгрыш</span>
-                    </label>
-                  </div>
-                </div>
-
-                <div className="flex gap-3">
-                  {editingGiveaway ? (
-                    <>
-                      <button
-                        onClick={handleUpdateGiveaway}
-                        className="flex-1 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white py-3 px-4 rounded-xl transition-all duration-200 font-medium shadow-lg"
-                      >
-                        Сохранить изменения
-                      </button>
-                      <button
-                        onClick={resetForm}
-                        className="bg-slate-600 hover:bg-slate-500 text-white py-3 px-4 rounded-xl transition-all duration-200 font-medium"
-                      >
-                        Отмена
-                      </button>
-                    </>
-                  ) : (
-                    <button
-                      onClick={handleCreateGiveaway}
-                      className="w-full bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white py-3 px-4 rounded-xl transition-all duration-200 font-medium shadow-lg transform hover:scale-[1.02]"
-                    >
-                      Создать розыгрыш
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              <div className="space-y-6">
-                {premiumGiveaway.isActive && (
-                  <div className="bg-gradient-to-r from-purple-900/20 to-purple-800/20 backdrop-blur-xl border-2 border-purple-500 rounded-2xl p-6">
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-xl font-bold text-white flex items-center gap-2">
-                        <span className="px-2 py-1 rounded-full text-xs bg-purple-500/20 text-purple-300 border border-purple-400/30">PREMIUM</span>
-                        {premiumGiveaway.title}
-                      </h3>
-                      <button
-                        onClick={() => startEdit(premiumGiveaway)}
-                        className="text-purple-400 hover:text-purple-300 text-sm"
-                      >
-                        Редактировать
-                      </button>
-                    </div>
-                    <p className="text-slate-300 text-sm mb-3">{premiumGiveaway.description}</p>
-                    <div className="flex justify-between text-xs text-slate-400">
-                      <span>{premiumGiveaway.socialNetwork}</span>
-                      <span>👥 {premiumGiveaway.participants} участников</span>
-                      <span>До {formatDate(premiumGiveaway.endDate)}</span>
-                    </div>
-                  </div>
-                )}
-
-                <div className="bg-slate-800/50 backdrop-blur-xl border border-slate-700 rounded-2xl p-6">
-                  <div className="flex items-center justify-between mb-6">
-                    <h3 className="text-xl font-bold text-white">Активные розыгрыши ({giveaways.filter(g => g.isActive).length})</h3>
-                    {giveaways.some(g => g.isDemo) && (
-                      <button
-                        onClick={clearDemoGiveaways}
-                        className="text-sm bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-300 px-3 py-1 rounded-lg border border-yellow-500/30 transition-colors"
-                      >
-                        Очистить демо
-                      </button>
-                    )}
-                  </div>
-
-                  <div className="space-y-3 max-h-96 overflow-y-auto">
-                    {giveaways
-                      .filter(g => g.isActive)
-                      .map(giveaway => {
-                        const isVIP = giveaway.category === 'VIP';
-                        const badgeColor = isVIP ? 'bg-yellow-500/20 text-yellow-300 border-yellow-400/30' : 'bg-blue-500/20 text-blue-300 border-blue-400/30';
-                        
-                        return (
-                          <div key={giveaway.id} className="bg-slate-700/30 rounded-lg p-4 border border-slate-600/30">
-                            <div className="flex items-start justify-between mb-2">
-                              <div className="flex items-center gap-2">
-                                {isVIP && (
-                                  <span className={`px-2 py-0.5 rounded-full text-xs border ${badgeColor}`}>
-                                    VIP
-                                  </span>
-                                )}
-                                <h4 className="font-semibold text-white text-sm">{giveaway.title}</h4>
-                                {giveaway.isDemo && (
-                                  <span className="px-2 py-0.5 rounded-full text-xs bg-gray-500/20 text-gray-400 border border-gray-500/30">
-                                    ДЕМО
-                                  </span>
-                                )}
-                              </div>
-                              <div className="flex gap-1">
-                                <button
-                                  onClick={() => startEdit(giveaway)}
-                                  className="text-blue-400 hover:text-blue-300 text-xs p-1"
-                                  title="Редактировать"
-                                >
-                                  ✏️
-                                </button>
-                                <button
-                                  onClick={() => handleDeleteGiveaway(giveaway.id)}
-                                  className="text-red-400 hover:text-red-300 text-xs p-1"
-                                  title="Удалить"
-                                >
-                                  🗑️
-                                </button>
-                              </div>
-                            </div>
-                            <p className="text-slate-300 text-xs mb-2 line-clamp-2">{giveaway.description}</p>
-                            <div className="flex justify-between text-xs text-slate-400">
-                              <span>{giveaway.socialNetwork}</span>
-                              <span>👥 {giveaway.participants}</span>
-                              <span>До {formatDate(giveaway.endDate)}</span>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    
-                    {giveaways.filter(g => g.isActive).length === 0 && (
-                      <div className="text-center py-8 text-slate-400">
-                        <div className="text-4xl mb-2">📝</div>
-                        <p>Нет активных розыгрышей</p>
-                        <p className="text-sm">Создайте первый розыгрыш</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+        <CreateGiveawayModal />
+        <EditGiveawayModal />
+        <DeleteConfirmModal />
+        <PremiumModal />
+        <ParticipantsModal />
+        <AdminView />
       </>
     );
   }
 
-  // Публичная страница
+  // Сортировка розыгрышей: VIP сначала, потом обычные
+  const sortedGiveaways = [...giveaways].sort((a, b) => {
+    if (a.category === 'VIP' && b.category !== 'VIP') return -1;
+    if (a.category !== 'VIP' && b.category === 'VIP') return 1;
+    return 0;
+  });
+
+  // Главная страница
   return (
     <>
       <Modal />
+      <AdminLoginModal />
       <GiveawayModal />
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-slate-900 to-black relative">
+      <UserProfile />
+      
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-slate-900 to-black relative pb-16">
         {/* Заголовок по центру вверху */}
         <div className="text-center pt-8 pb-6">
           <h1 className="text-6xl font-bold font-russo bg-gradient-to-r from-orange-500 to-red-500 bg-clip-text text-transparent mb-2">
@@ -1150,206 +1363,159 @@ const GiveawayApp = () => {
         </div>
 
         {/* Основной контент */}
-        <div className="max-w-7xl mx-auto px-3 md:px-6 pb-20">
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4">
-            {premiumGiveaway.isActive && (
-              <div className="sm:col-span-2 lg:col-span-3 xl:col-span-4 mb-2 md:mb-3">
-                <div 
-                  className="bg-gradient-to-b from-slate-800/50 to-slate-900/50 backdrop-blur-sm border-2 border-purple-500 rounded-lg overflow-hidden hover:border-purple-400 transition-all duration-300 group hover:scale-[1.01] hover:shadow-xl hover:shadow-purple-500/10 relative cursor-pointer"
-                  onClick={() => showGiveawayModal({...premiumGiveaway, id: 'premium', category: 'Премиум'})}
-                >
-                  <span className="absolute top-2 left-2 text-xs bg-purple-500/20 text-purple-300 px-2 py-1 rounded-full border border-purple-400/30 z-10">PREMIUM</span>
-                  <div className="p-3 md:p-4 flex flex-col h-full">
-                    <div className="text-center mb-3 mt-6">
-                      <h3 className="text-sm md:text-base font-bold text-white mb-2 group-hover:text-orange-100 transition-colors">{premiumGiveaway.title}</h3>
-                      <p className="text-slate-300 leading-relaxed text-xs md:text-sm line-clamp-2">{premiumGiveaway.description}</p>
-                    </div>
-                    
-                    <div className="flex justify-between items-center mb-1">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-gradient-to-r from-purple-500/20 to-purple-600/20 text-purple-300 border border-purple-400/20">
-                        {premiumGiveaway.socialNetwork}
-                      </span>
-                      <span className="text-xs text-slate-400">
-                        До {formatDate(premiumGiveaway.endDate)}
-                      </span>
-                    </div>
-                    
-                    <div className="mt-auto">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          showGiveawayModal({...premiumGiveaway, id: 'premium', category: 'Премиум'});
-                        }}
-                        className="w-full bg-gradient-to-r from-purple-500 to-purple-600 text-white px-3 py-2 rounded-lg hover:from-purple-600 hover:to-purple-700 transition-all duration-200 font-medium shadow-lg hover:shadow-purple-500/25 transform hover:scale-[1.02] text-xs md:text-sm"
-                      >
-                        Подробнее
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {giveaways
-              .filter(g => g.isActive)
-              .sort((a, b) => {
-                // Сначала VIP, потом Обычные
-                if (a.category === 'VIP' && b.category !== 'VIP') return -1;
-                if (b.category === 'VIP' && a.category !== 'VIP') return 1;
-                return 0; // Остальные по порядку
-              })
-              .map(giveaway => {
-                const isVIP = giveaway.category === 'VIP';
-                const borderColor = isVIP ? 'border-yellow-500' : 'border-blue-500';
-                const hoverTextColor = isVIP ? 'group-hover:text-yellow-100' : 'group-hover:text-blue-100';
-                const badgeColor = isVIP ? 'bg-yellow-500/20 text-yellow-300 border-yellow-400/30' : '';
-                const platformColor = isVIP 
-                  ? 'bg-gradient-to-r from-yellow-500/20 to-amber-500/20 text-yellow-300 border-yellow-400/20'
-                  : 'bg-gradient-to-r from-blue-500/20 to-blue-600/20 text-blue-300 border-blue-400/20';
-                const buttonColor = isVIP
-                  ? 'bg-gradient-to-r from-yellow-500 to-amber-500 hover:from-yellow-600 hover:to-amber-600 hover:shadow-yellow-500/25'
-                  : 'bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 hover:shadow-blue-500/25';
-
-                return (
-                  <div 
-                    key={giveaway.id} 
-                    className={`bg-gradient-to-b from-slate-800/50 to-slate-900/50 backdrop-blur-sm border-2 ${borderColor} rounded-lg overflow-hidden transition-all duration-300 group hover:scale-[1.01] hover:shadow-xl relative min-h-[200px] cursor-pointer`}
-                    onClick={() => showGiveawayModal(giveaway)}
-                  >
-                    {isVIP && (
-                      <span className={`absolute top-2 left-2 text-xs px-2 py-1 rounded-full border z-10 ${badgeColor}`}>VIP</span>
-                    )}
-                    <div className="p-3 md:p-4 flex flex-col h-full min-h-[200px]">
-                      <div className="text-center mb-3 mt-8 flex-grow">
-                        <h3 className={`text-sm md:text-base font-bold text-white mb-2 ${hoverTextColor} transition-colors`}>{giveaway.title}</h3>
-                        <p className="text-slate-300 leading-relaxed text-xs md:text-sm line-clamp-2">{giveaway.description}</p>
-                      </div>
-                      
-                      <div className="flex justify-between items-center mb-2 mt-auto">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs border ${platformColor}`}>
-                          {giveaway.socialNetwork}
-                        </span>
-                        <span className="text-xs text-slate-400">
-                          До {formatDate(giveaway.endDate)}
-                        </span>
-                      </div>
-                      
-                      <div className="flex justify-between items-center text-xs text-slate-400 mb-2">
-                        <span>👥 {giveaway.participants} участников</span>
-                      </div>
-                      
-                      <div className="flex-shrink-0">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            showGiveawayModal(giveaway);
-                          }}
-                          className={`w-full ${buttonColor} text-white px-3 py-2 rounded-lg transition-all duration-200 font-medium shadow-lg transform hover:scale-[1.02] text-xs md:text-sm`}
-                        >
-                          Подробнее
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            
-            {giveaways.filter(g => g.isActive).length === 0 && !premiumGiveaway.isActive && (
-              <div className="col-span-full flex flex-col items-center justify-center py-16">
-                <div className="text-6xl mb-4">🎁</div>
-                <h3 className="text-2xl font-bold text-white mb-2">Розыгрышей пока нет</h3>
-                <p className="text-slate-400 text-center max-w-md">
-                  В данный момент нет активных розыгрышей. Следите за обновлениями!
-                </p>
-              </div>
-            )}
-          </div>
-        
-        {/* Кнопка входа внизу страницы точно как в оригинале */}
-        <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-50">
-          {!localUser && (
-            <button
-              onClick={() => setCurrentView('login')}
-              className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white px-8 py-3 rounded-xl transition-all duration-200 font-medium shadow-lg"
+        <div className="max-w-6xl mx-auto px-3 md:px-6 pb-20">
+          {/* Премиум розыгрыш */}
+          {premiumGiveaway && premiumGiveaway.is_active && (
+            <div 
+              onClick={() => handleGiveawayClick({...premiumGiveaway, id: 'premium'})}
+              className="mb-8 bg-gradient-to-r from-purple-900/30 to-pink-900/30 backdrop-blur-xl border-2 border-purple-500/50 rounded-3xl p-6 cursor-pointer hover:border-purple-400/70 transition-all duration-300 transform hover:scale-[1.02]"
             >
-              Вход
-            </button>
-          )}
-        </div>
-        
-        {/* Элементы управления для авторизованного пользователя (скрытые в углу) */}
-        {localUser && (
-          <div className="fixed top-4 right-4 z-40">
-            <div className="flex gap-2 items-center">
-              <div className="bg-slate-800/90 backdrop-blur-xl border border-slate-700 rounded-xl px-4 py-2 flex items-center gap-2">
-                <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                <span className="text-white text-sm font-medium">{localUser.nickname}</span>
-              </div>
-              <button
-                onClick={() => setShowUserProfile(!showUserProfile)}
-                className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-xl transition-colors text-sm font-medium"
-              >
-                Профиль
-              </button>
-              <button
-                onClick={handleLocalLogout}
-                className="bg-slate-600 hover:bg-slate-500 text-white px-4 py-2 rounded-xl transition-colors text-sm font-medium"
-              >
-                Выход
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Модальное окно профиля */}
-        {showUserProfile && localUser && (
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
-            <div className="bg-slate-800/95 backdrop-blur-xl border border-slate-700 rounded-2xl p-6 w-full max-w-2xl">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-xl font-bold text-white">Мой профиль</h3>
-                <button
-                  onClick={() => setShowUserProfile(false)}
-                  className="text-slate-400 hover:text-white w-8 h-8 rounded-full bg-slate-700/50 hover:bg-slate-600/50 flex items-center justify-center"
-                >
-                  ✕
-                </button>
+              <div className="flex items-center gap-3 mb-4">
+                <span className="bg-gradient-to-r from-purple-500 to-pink-500 text-white px-3 py-1 rounded-full text-sm font-medium">
+                  PREMIUM
+                </span>
+                <span className="text-slate-400 text-sm">До {formatDate(premiumGiveaway.end_date)}</span>
               </div>
               
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                <div className="bg-slate-700/30 rounded-lg p-3">
-                  <div className="text-slate-400 text-sm">Никнейм</div>
-                  <div className="text-white font-medium">{localUser.nickname}</div>
+              <h3 className="text-2xl md:text-3xl font-bold text-white mb-3 text-center">
+                {premiumGiveaway.title}
+              </h3>
+              
+              <p className="text-slate-300 text-center leading-relaxed mb-4">
+                {premiumGiveaway.description}
+              </p>
+              
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-purple-400 text-sm">{premiumGiveaway.social_network}</span>
                 </div>
-                <div className="bg-slate-700/30 rounded-lg p-3">
-                  <div className="text-slate-400 text-sm">Дата регистрации</div>
-                  <div className="text-white font-medium">{formatDate(localUser.createdAt)}</div>
-                </div>
-                <div className="bg-slate-700/30 rounded-lg p-3">
-                  <div className="text-slate-400 text-sm">Участие в розыгрышах</div>
-                  <div className="text-white font-medium">{localUser.participations?.length || 0}</div>
-                </div>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleParticipate(premiumGiveaway, true);
+                  }}
+                  className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white px-8 py-3 rounded-xl transition-all duration-200 font-medium shadow-lg"
+                >
+                  Участвовать
+                </button>
               </div>
+            </div>
+          )}
 
-              {localUser.participations && localUser.participations.length > 0 && (
-                <div>
-                  <h4 className="text-white font-medium mb-3">История участий</h4>
-                  <div className="space-y-2 max-h-40 overflow-y-auto">
-                    {localUser.participations.map((participation, index) => (
-                      <div key={index} className="bg-slate-700/30 rounded-lg p-3 flex justify-between items-center">
-                        <span className="text-white text-sm">{participation.giveawayTitle}</span>
-                        <span className="text-slate-400 text-xs">{formatDate(participation.date)}</span>
-                      </div>
-                    ))}
+          {/* Сетка розыгрышей 2x2 как в оригинале */}
+          <div className="grid grid-cols-2 gap-6">
+            {sortedGiveaways.filter(g => g.is_active).map((giveaway) => (
+              <div 
+                key={giveaway.id}
+                onClick={() => handleGiveawayClick(giveaway)}
+                className={`bg-slate-800/50 backdrop-blur-xl border-2 rounded-2xl p-5 cursor-pointer transition-all duration-300 transform hover:scale-[1.02] min-h-[200px] ${
+                  giveaway.category === 'VIP' 
+                    ? 'border-yellow-500/50 hover:border-yellow-400/70' 
+                    : 'border-blue-500/50 hover:border-blue-400/70'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                    giveaway.category === 'VIP' 
+                      ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30' 
+                      : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                  }`}>
+                    {giveaway.category}
+                  </span>
+                  <span className="text-slate-400 text-xs">До {formatDate(giveaway.end_date)}</span>
+                </div>
+
+                <h3 className="text-xl font-bold text-white mb-3 text-center leading-tight">
+                  {giveaway.title}
+                </h3>
+
+                <p className="text-slate-300 text-sm text-center mb-4 line-clamp-3">
+                  {giveaway.description}
+                </p>
+
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <span className={`text-xs px-2 py-1 rounded ${
+                      giveaway.category === 'VIP' ? 'bg-yellow-500/20 text-yellow-400' : 'bg-blue-500/20 text-blue-400'
+                    }`}>
+                      {giveaway.social_network}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1 text-slate-400 text-xs">
+                    <span>👤</span>
+                    <span>{giveaway.participants_count || 0} участников</span>
                   </div>
                 </div>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-    </>
-  );
-};
 
-export default GiveawayApp;
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleParticipate(giveaway);
+                  }}
+                  className={`w-full py-3 px-4 rounded-xl transition-all duration-200 font-medium ${
+                    giveaway.category === 'VIP'
+                      ? 'bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-600 hover:to-orange-600 text-white'
+                      : 'bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white'
+                  }`}
+                >
+                  Подробнее
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+        
+        {/* Единый подвал как в оригинале */}
+        <footer className="fixed bottom-0 left-0 right-0 bg-gradient-to-t from-slate-900/95 to-slate-800/95 backdrop-blur-sm border-t border-slate-700/30 px-4 py-3 z-50">
+          <div className="max-w-6xl mx-auto flex justify-center items-center gap-4">
+            {isAdminAuthenticated ? (
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 bg-gradient-to-r from-orange-500 to-amber-500 rounded-full flex items-center justify-center">
+                    <span className="text-white text-xs font-bold">A</span>
+                  </div>
+                  <span className="text-white text-sm font-medium">Администратор</span>
+                </div>
+                <button 
+                  onClick={() => setCurrentView('admin')}
+                  className="text-xs text-slate-400 hover:text-white transition-colors border border-slate-700/50 hover:border-slate-600/50 px-3 py-1 rounded-full"
+                >
+                  Админ-панель
+                </button>
+                <button 
+                  onClick={handleAdminLogout}
+                  className="text-xs text-red-400 hover:text-red-300 transition-colors border border-red-500/30 hover:border-red-400/50 px-3 py-1 rounded-full"
+                >
+                  Выйти
+                </button>
+              </div>
+            ) : localUser ? (
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 bg-gradient-to-r from-green-500 to-emerald-500 rounded-full flex items-center justify-center">
+                    <span className="text-white text-xs font-bold">{localUser.nickname[0].toUpperCase()}</span>
+                  </div>
+                  <span className="text-white text-sm font-medium">{localUser.nickname}</span>
+                </div>
+                <button 
+                  onClick={() => setShowUserProfile(!showUserProfile)}
+                  className="text-xs text-slate-400 hover:text-white transition-colors border border-slate-700/50 hover:border-slate-600/50 px-3 py-1 rounded-full"
+                >
+                  Профиль
+                </button>
+                <button 
+                  onClick={handleLocalLogout}
+                  className="text-xs text-red-400 hover:text-red-300 transition-colors border border-red-500/30 hover:border-red-400/50 px-3 py-1 rounded-full"
+                >
+                  Выйти
+                </button>
+              </div>
+            ) : (
+              <>
+                <button 
+                  onClick={() => setCurrentView('login')}
+                  className="bg-gradient-to-r from-orange-500 to-amber-500 text-white px-6 py-2 rounded-full hover:from-orange-600 hover:to-amber-600 transition-all duration-200 font-medium shadow-lg hover:shadow-orange-500/25 transform hover:scale-[1.02] text-sm"
+                >
+                  Вход
+                </button>
+                <button
