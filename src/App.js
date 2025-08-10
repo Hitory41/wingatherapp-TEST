@@ -656,13 +656,6 @@ const GiveawayApp = () => {
                 </div>
               </div>
 
-              {hasValidLink && (
-                <div className="mb-6 bg-slate-800/30 rounded-lg p-3 border border-slate-700/30">
-                  <div className="text-slate-400 text-xs mb-2">Ссылка на розыгрыш:</div>
-                  <div className="text-blue-400 text-sm break-all">{giveaway.socialLink}</div>
-                </div>
-              )}
-
               {!hasValidLink && (
                 <div className="mb-6 bg-amber-900/20 border border-amber-500/30 rounded-lg p-3">
                   <div className="text-amber-300 text-sm flex items-center gap-2">
