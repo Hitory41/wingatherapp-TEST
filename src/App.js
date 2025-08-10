@@ -1140,89 +1140,17 @@ const GiveawayApp = () => {
     <>
       <Modal />
       <GiveawayModal />
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-slate-900 to-black p-3 md:p-6 pb-16">
-        <div className="max-w-7xl mx-auto">
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 md:mb-8 gap-4">
-            <div className="text-center md:text-left">
-              <h1 className="text-4xl md:text-6xl font-bold font-russo bg-gradient-to-r from-orange-500 to-red-500 bg-clip-text text-transparent mb-2">
-                WinGather
-              </h1>
-              <p className="text-slate-400 text-lg md:text-xl">Участвуйте в розыгрышах и выигрывайте призы!</p>
-            </div>
-            
-            <div className="flex flex-col md:flex-row gap-2 w-full md:w-auto">
-              {localUser ? (
-                <div className="flex flex-col md:flex-row gap-2">
-                  <div className="bg-slate-800/50 backdrop-blur-xl border border-slate-700 rounded-xl px-4 py-2 flex items-center gap-2">
-                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                    <span className="text-white text-sm font-medium">{localUser.nickname}</span>
-                  </div>
-                  <button
-                    onClick={() => setShowUserProfile(!showUserProfile)}
-                    className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-xl transition-colors text-sm font-medium whitespace-nowrap"
-                  >
-                    Профиль
-                  </button>
-                  <button
-                    onClick={handleLocalLogout}
-                    className="bg-slate-600 hover:bg-slate-500 text-white px-4 py-2 rounded-xl transition-colors text-sm font-medium"
-                  >
-                    Выход
-                  </button>
-                </div>
-              ) : (
-                <button
-                  onClick={() => setCurrentView('login')}
-                  className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white px-6 py-3 rounded-xl transition-all duration-200 font-medium shadow-lg transform hover:scale-[1.02] whitespace-nowrap"
-                >
-                  Войти / Регистрация
-                </button>
-              )}
-            </div>
-          </div>
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-slate-900 to-black relative">
+        {/* Заголовок по центру вверху */}
+        <div className="text-center pt-8 pb-6">
+          <h1 className="text-6xl font-bold font-russo bg-gradient-to-r from-orange-500 to-red-500 bg-clip-text text-transparent mb-2">
+            WinGather
+          </h1>
+          <p className="text-slate-400 text-xl">Участвуй и выигрывай!</p>
+        </div>
 
-          {showUserProfile && localUser && (
-            <div className="mb-6 bg-slate-800/50 backdrop-blur-xl border border-slate-700 rounded-2xl p-6">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-xl font-bold text-white">Мой профиль</h3>
-                <button
-                  onClick={() => setShowUserProfile(false)}
-                  className="text-slate-400 hover:text-white"
-                >
-                  ✕
-                </button>
-              </div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                <div className="bg-slate-700/30 rounded-lg p-3">
-                  <div className="text-slate-400 text-sm">Никнейм</div>
-                  <div className="text-white font-medium">{localUser.nickname}</div>
-                </div>
-                <div className="bg-slate-700/30 rounded-lg p-3">
-                  <div className="text-slate-400 text-sm">Дата регистрации</div>
-                  <div className="text-white font-medium">{formatDate(localUser.createdAt)}</div>
-                </div>
-                <div className="bg-slate-700/30 rounded-lg p-3">
-                  <div className="text-slate-400 text-sm">Участие в розыгрышах</div>
-                  <div className="text-white font-medium">{localUser.participations?.length || 0}</div>
-                </div>
-              </div>
-
-              {localUser.participations && localUser.participations.length > 0 && (
-                <div>
-                  <h4 className="text-white font-medium mb-3">История участий</h4>
-                  <div className="space-y-2 max-h-40 overflow-y-auto">
-                    {localUser.participations.map((participation, index) => (
-                      <div key={index} className="bg-slate-700/30 rounded-lg p-3 flex justify-between items-center">
-                        <span className="text-white text-sm">{participation.giveawayTitle}</span>
-                        <span className="text-slate-400 text-xs">{formatDate(participation.date)}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
+        {/* Основной контент */}
+        <div className="max-w-7xl mx-auto px-3 md:px-6 pb-20">
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4">
             {premiumGiveaway.isActive && (
@@ -1337,7 +1265,83 @@ const GiveawayApp = () => {
               </div>
             )}
           </div>
+        
+        {/* Кнопка входа внизу страницы (как в оригинале) */}
+        <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-50">
+          {localUser ? (
+            <div className="flex gap-2 items-center">
+              <div className="bg-slate-800/90 backdrop-blur-xl border border-slate-700 rounded-xl px-4 py-2 flex items-center gap-2">
+                <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                <span className="text-white text-sm font-medium">{localUser.nickname}</span>
+              </div>
+              <button
+                onClick={() => setShowUserProfile(!showUserProfile)}
+                className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-xl transition-colors text-sm font-medium"
+              >
+                Профиль
+              </button>
+              <button
+                onClick={handleLocalLogout}
+                className="bg-slate-600 hover:bg-slate-500 text-white px-4 py-2 rounded-xl transition-colors text-sm font-medium"
+              >
+                Выход
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setCurrentView('login')}
+              className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white px-8 py-3 rounded-xl transition-all duration-200 font-medium shadow-lg"
+            >
+              Вход
+            </button>
+          )}
         </div>
+
+        {/* Модальное окно профиля */}
+        {showUserProfile && localUser && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
+            <div className="bg-slate-800/95 backdrop-blur-xl border border-slate-700 rounded-2xl p-6 w-full max-w-2xl">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-xl font-bold text-white">Мой профиль</h3>
+                <button
+                  onClick={() => setShowUserProfile(false)}
+                  className="text-slate-400 hover:text-white w-8 h-8 rounded-full bg-slate-700/50 hover:bg-slate-600/50 flex items-center justify-center"
+                >
+                  ✕
+                </button>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                <div className="bg-slate-700/30 rounded-lg p-3">
+                  <div className="text-slate-400 text-sm">Никнейм</div>
+                  <div className="text-white font-medium">{localUser.nickname}</div>
+                </div>
+                <div className="bg-slate-700/30 rounded-lg p-3">
+                  <div className="text-slate-400 text-sm">Дата регистрации</div>
+                  <div className="text-white font-medium">{formatDate(localUser.createdAt)}</div>
+                </div>
+                <div className="bg-slate-700/30 rounded-lg p-3">
+                  <div className="text-slate-400 text-sm">Участие в розыгрышах</div>
+                  <div className="text-white font-medium">{localUser.participations?.length || 0}</div>
+                </div>
+              </div>
+
+              {localUser.participations && localUser.participations.length > 0 && (
+                <div>
+                  <h4 className="text-white font-medium mb-3">История участий</h4>
+                  <div className="space-y-2 max-h-40 overflow-y-auto">
+                    {localUser.participations.map((participation, index) => (
+                      <div key={index} className="bg-slate-700/30 rounded-lg p-3 flex justify-between items-center">
+                        <span className="text-white text-sm">{participation.giveawayTitle}</span>
+                        <span className="text-slate-400 text-xs">{formatDate(participation.date)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </>
   );
