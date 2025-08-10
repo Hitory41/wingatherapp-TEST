@@ -1266,9 +1266,21 @@ const GiveawayApp = () => {
             )}
           </div>
         
-        {/* Кнопка входа внизу страницы (как в оригинале) */}
+        {/* Кнопка входа внизу страницы точно как в оригинале */}
         <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-50">
-          {localUser ? (
+          {!localUser && (
+            <button
+              onClick={() => setCurrentView('login')}
+              className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white px-8 py-3 rounded-xl transition-all duration-200 font-medium shadow-lg"
+            >
+              Вход
+            </button>
+          )}
+        </div>
+        
+        {/* Элементы управления для авторизованного пользователя (скрытые в углу) */}
+        {localUser && (
+          <div className="fixed top-4 right-4 z-40">
             <div className="flex gap-2 items-center">
               <div className="bg-slate-800/90 backdrop-blur-xl border border-slate-700 rounded-xl px-4 py-2 flex items-center gap-2">
                 <div className="w-2 h-2 bg-green-500 rounded-full"></div>
@@ -1287,15 +1299,8 @@ const GiveawayApp = () => {
                 Выход
               </button>
             </div>
-          ) : (
-            <button
-              onClick={() => setCurrentView('login')}
-              className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white px-8 py-3 rounded-xl transition-all duration-200 font-medium shadow-lg"
-            >
-              Вход
-            </button>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* Модальное окно профиля */}
         {showUserProfile && localUser && (
