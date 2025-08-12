@@ -144,8 +144,7 @@ const GiveawayApp = () => {
         participants: g.participants_count,
         participantIds: [], // Будем получать отдельно при необходимости
         isActive: g.is_active,
-        category: g.category,
-        isDemo: g.title.includes('(ДЕМО)')
+        category: g.category
       }));
       setGiveaways(formattedGiveaways);
       // Загружаем премиум розыгрыш
@@ -488,22 +487,6 @@ const GiveawayApp = () => {
           hideModal();
           showModal('error', 'Ошибка', 'Не удалось удалить розыгрыш. Попробуйте еще раз.');
         }
-      },
-      hideModal
-    );
-  };
-  
-  // Функция для быстрого удаления всех демо-розыгрышей
-  const clearDemoGiveaways = () => {
-    showModal(
-      'confirm',
-      'Удалить демо-розыгрыши',
-      'Удалить все демонстрационные розыгрыши? Останутся только ваши реальные розыгрыши.',
-      () => {
-        localStorage.setItem('wingather_demo_deleted', 'true');
-        setGiveaways(prev => prev.filter(g => !g.isDemo));
-        hideModal();
-        showModal('success', 'Демо удалены', 'Все демонстрационные розыгрыши удалены');
       },
       hideModal
     );
@@ -937,7 +920,7 @@ const GiveawayApp = () => {
               </button>
               <button
                 onClick={handleLocalLogout}
-                className="w-full text-red-400 py-3 hover:text-red-300 transition-colors border border-red-500/30 rounded-xl hover:border-red-400/50"
+                className="w-full text-red-400 py-3 hover:text-red-300 transition-colors border border-red-500/30 hover:border-red-400/50 px-3 py-1 rounded-full"
               >
                 Выйти из профиля
               </button>
@@ -1070,14 +1053,6 @@ const GiveawayApp = () => {
                         <span className="w-2 h-2 bg-blue-500 rounded-full mr-3"></span>
                         Все розыгрыши ({giveaways.length + 1})
                       </h2>
-                      {giveaways.some(g => g.isDemo) && (
-                        <button
-                          onClick={clearDemoGiveaways}
-                          className="text-xs bg-gradient-to-r from-red-600 to-red-700 text-white px-3 py-1 rounded-lg hover:from-red-700 hover:to-red-800 transition-all duration-200"
-                        >
-                          Очистить демо
-                        </button>
-                      )}
                     </div>
                   </div>
                   <div className="flex-1 overflow-y-auto">
@@ -1178,7 +1153,7 @@ const GiveawayApp = () => {
                                 onClick={() => handleDeleteGiveaway(giveaway.id)}
                                 className="bg-gradient-to-r from-red-600 to-red-700 text-white px-2 py-1 rounded-lg text-xs hover:from-red-700 hover:to-red-800 transition-all duration-200"
                               >
-                                {giveaway.isDemo ? 'Удалить ДЕМО' : 'Уд.'}
+                                Удалить
                               </button>
                             </div>
                           </div>
@@ -1187,7 +1162,7 @@ const GiveawayApp = () => {
                     </div>
                     {giveaways.length === 0 && (
                       <div className="p-6 text-center">
-                        <p className="text-slate-400 text-sm">Обычных розыгрышей пока нет.</p>
+                        <p className="text-slate-400 text-sm">Розыгрышей пока нет.</p>
                       </div>
                     )}
                   </div>
