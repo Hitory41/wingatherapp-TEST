@@ -1,51 +1,7 @@
 ```jsx
 import React, { useState, useEffect } from 'react';
-import { giveawayAPI, premiumAPI, participantAPI, userAPI } from './supabaseClient';
-
-// Замена для hatch.useStoredState (теперь только для локальных настроек)
-const useStoredState = (key, defaultValue) => {
-  const [value, setValue] = useState(() => {
-    try {
-      const item = window.localStorage.getItem(key);
-      return item ? JSON.parse(item) : defaultValue;
-    } catch (error) {
-      return defaultValue;
-    }
-  });
-  const setStoredValue = (newValue) => {
-    try {
-      setValue(newValue);
-      window.localStorage.setItem(key, JSON.stringify(newValue));
-    } catch (error) {
-      console.error('Error saving to localStorage:', error);
-    }
-  };
-  return [value, setStoredValue];
-};
-
-// Замена для hatch.useUser
-const useUser = () => ({
-  id: 'web_user_' + Math.random().toString(36).substr(2, 9),
-  name: 'Веб пользователь',
-  color: '#FF802B'
-});
-
-// Load Russo One font
-const loadFont = () => {
-  const link = document.createElement('link');
-  link.href = 'https://fonts.googleapis.com/css2?family=Russo+One&display=swap';
-  link.rel = 'stylesheet';
-  if (!document.head.querySelector(`link[href="${link.href}"]`)) {
-    document.head.appendChild(link);
-  }
-};
 
 const GiveawayApp = () => {
-  useEffect(() => {
-    loadFont();
-  }, []);
-  
-  const user = useUser();
   const [giveaways, setGiveaways] = useState([]);
   const [premiumGiveaway, setPremiumGiveaway] = useState({
     id: 'premium',
@@ -59,32 +15,25 @@ const GiveawayApp = () => {
     isActive: false,
     category: 'Премиум'
   });
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   const [currentView, setCurrentView] = useState('public');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [password, setPassword] = useState('');
   const [editingGiveaway, setEditingGiveaway] = useState(null);
-  
-  // Локальный профиль пользователя
-  const [localUser, setLocalUser] = useStoredState('localUser', null);
-  const [userProfiles, setUserProfiles] = useStoredState('userProfiles', {}); // Хранилище всех профилей пользователей
+  const [localUser, setLocalUser] = useState(null);
+  const [userProfiles, setUserProfiles] = useState({});
   const [showUserProfile, setShowUserProfile] = useState(false);
   const [loginForm, setLoginForm] = useState({
     nickname: '',
     password: ''
   });
-  
-  // Состояния для модальных окон
   const [modal, setModal] = useState({
     show: false,
-    type: '', // 'success', 'error', 'confirm'
+    type: '',
     title: '',
     message: '',
     onConfirm: null,
     onCancel: null
   });
-  
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -94,15 +43,219 @@ const GiveawayApp = () => {
     isActive: true,
     category: 'Обычный'
   });
-  
-  // Зашифрованные данные администратора (используем простое кодирование + хеширование)
-  const encryptedAdminData = {
-    // Никнейм закодирован в Base64 + обратный порядок
-    nickname: 'dGhnaW5kb29H', // 'Goodnight' -> reverse -> base64
-    // Пароль хеширован (SHA-256 симуляция через простую функцию)
-    passwordHash: '8f9e4c2a5b1d6e3f7a8c9b2e4d5f6a7b8c9d1e2f3a4b5c6d7e8f9a1b2c3d4e5f6'
+
+  // Supabase конфигурация
+  const SUPABASE_URL = 'https://perwwqhyouhjelpjuowv.supabase.co';
+  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBlcnd3cWh5b3VoamVscGp1b3d2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ5OTkxMzIsImV4cCI6MjA3MDU3NTEzMn0.Ojpl0Zf3XTuhzSdQtuIW1PGykNWXHWr9DSEiVFoMX6g';
+
+  // Инициализация Supabase
+  const supabase = async (endpoint, method = 'GET', body = null) => {
+    const url = `${SUPABASE_URL}/rest/v1/${endpoint}`;
+    const headers = {
+      'apikey': SUPABASE_ANON_KEY,
+      'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+      'Content-Type': 'application/json',
+      'Prefer': 'return=representation'
+    };
+
+    const config = {
+      method,
+      headers
+    };
+
+    if (body) {
+      config.body = JSON.stringify(body);
+    }
+
+    try {
+      const response = await fetch(url, config);
+      if (!response.ok) {
+        throw new Error(`Supabase error: ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error('Supabase request failed:', error);
+      return null;
+    }
   };
-  
+
+  // Инициализация таблиц при первом запуске
+  const initializeSupabase = async () => {
+    // Создаем таблицы если их нет
+    const tables = [
+      {
+        name: 'giveaways',
+        columns: [
+          { name: 'id', type: 'text', is_primary_key: true },
+          { name: 'title', type: 'text' },
+          { name: 'description', type: 'text' },
+          { name: 'social_network', type: 'text' },
+          { name: 'social_link', type: 'text' },
+          { name: 'end_date', type: 'text' },
+          { name: 'participants', type: 'integer', default: 0 },
+          { name: 'participant_ids', type: 'jsonb', default: '[]' },
+          { name: 'is_active', type: 'boolean', default: true },
+          { name: 'category', type: 'text' },
+          { name: 'created_at', type: 'timestamp', default: 'now()' }
+        ]
+      },
+      {
+        name: 'user_profiles',
+        columns: [
+          { name: 'id', type: 'text', is_primary_key: true },
+          { name: 'nickname', type: 'text' },
+          { name: 'password', type: 'text' },
+          { name: 'created_at', type: 'text' },
+          { name: 'participations', type: 'jsonb', default: '[]' },
+          { name: 'updated_at', type: 'timestamp', default: 'now()' }
+        ]
+      }
+    ];
+
+    // Проверяем существование таблиц
+    for (const table of tables) {
+      const existing = await supabase(`pg_catalog.pg_tables?tablename=eq.${table.name}`);
+      if (!existing || existing.length === 0) {
+        // Создаем таблицу
+        let createQuery = `CREATE TABLE ${table.name} (`;
+        createQuery += table.columns.map(col => {
+          let colDef = `${col.name} ${col.type}`;
+          if (col.is_primary_key) colDef += ' PRIMARY KEY';
+          if (col.default) colDef += ` DEFAULT ${col.default}`;
+          return colDef;
+        }).join(', ');
+        createQuery += ')';
+
+        await fetch(`${SUPABASE_URL}/rpc/create_table`, {
+          method: 'POST',
+          headers: {
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ statement: createQuery })
+        });
+      }
+    }
+
+    // Загружаем данные
+    await loadGiveaways();
+    await loadUserProfiles();
+  };
+
+  const loadGiveaways = async () => {
+    const data = await supabase('giveaways');
+    if (data && data.length > 0) {
+      const formatted = data.map(item => ({
+        ...item,
+        socialNetwork: item.social_network,
+        socialLink: item.social_link,
+        endDate: item.end_date,
+        isActive: item.is_active
+      }));
+      setGiveaways(formatted);
+    } else {
+      // Демо данные
+      const demoGiveaways = [
+        {
+          id: 'demo_iphone_' + Date.now(),
+          title: 'iPhone 15 Pro (ДЕМО)',
+          description: 'Демонстрационный розыгрыш - можно удалить в админ-панели',
+          socialNetwork: 'Telegram',
+          socialLink: 'https://t.me/example',
+          endDate: '2025-12-15',
+          participants: 42,
+          participantIds: [],
+          isActive: true,
+          category: 'VIP',
+          isDemo: true
+        },
+        {
+          id: 'demo_ps5_' + Date.now(),
+          title: 'PlayStation 5 (ДЕМО)',
+          description: 'Демонстрационный розыгрыш - можно удалить в админ-панели',
+          socialNetwork: 'VK',
+          socialLink: 'https://vk.com/example',
+          endDate: '2025-12-20',
+          participants: 78,
+          participantIds: [],
+          isActive: true,
+          category: 'Обычный',
+          isDemo: true
+        }
+      ];
+      setGiveaways(demoGiveaways);
+    }
+  };
+
+  const loadUserProfiles = async () => {
+    const data = await supabase('user_profiles');
+    if (data) {
+      const profiles = {};
+      data.forEach(profile => {
+        profiles[profile.nickname.toLowerCase()] = profile;
+      });
+      setUserProfiles(profiles);
+    }
+  };
+
+  const saveGiveaway = async (giveaway) => {
+    const payload = {
+      id: giveaway.id,
+      title: giveaway.title,
+      description: giveaway.description,
+      social_network: giveaway.socialNetwork,
+      social_link: giveaway.socialLink,
+      end_date: giveaway.endDate,
+      participants: giveaway.participants,
+      participant_ids: giveaway.participantIds,
+      is_active: giveaway.isActive,
+      category: giveaway.category
+    };
+
+    await supabase('giveaways', 'POST', payload);
+    await loadGiveaways();
+  };
+
+  const updateGiveaway = async (giveaway) => {
+    const payload = {
+      title: giveaway.title,
+      description: giveaway.description,
+      social_network: giveaway.socialNetwork,
+      social_link: giveaway.socialLink,
+      end_date: giveaway.endDate,
+      participants: giveaway.participants,
+      participant_ids: giveaway.participantIds,
+      is_active: giveaway.isActive,
+      category: giveaway.category
+    };
+
+    await supabase(`giveaways?id=eq.${giveaway.id}`, 'PATCH', payload);
+    await loadGiveaways();
+  };
+
+  const deleteGiveaway = async (id) => {
+    await supabase(`giveaways?id=eq.${id}`, 'DELETE');
+    await loadGiveaways();
+  };
+
+  const saveUserProfile = async (profile) => {
+    const payload = {
+      id: profile.id,
+      nickname: profile.nickname,
+      password: profile.password,
+      created_at: profile.createdAt,
+      participations: profile.participations
+    };
+
+    await supabase('user_profiles', 'POST', payload);
+    await loadUserProfiles();
+  };
+
+  useEffect(() => {
+    initializeSupabase();
+  }, []);
+
   // Функция для декодирования никнейма
   const decodeNickname = (encoded) => {
     try {
@@ -111,7 +264,7 @@ const GiveawayApp = () => {
       return null;
     }
   };
-  
+
   // Функция для проверки пароля (простое хеширование)
   const checkPassword = (inputPassword) => {
     // Простая хеш-функция для демонстрации
@@ -123,57 +276,9 @@ const GiveawayApp = () => {
       hash = hash & hash; // Конвертируем в 32-битное число
     }
     const hashedPassword = Math.abs(hash).toString(16);
-    return hashedPassword === '8f9e4c2a' || inputPassword === 'Molokokupilamur@shk1ns-!'; // Дублируем для совместимости
+    return hashedPassword === '8f9e4c2a' || inputPassword === 'Molokokupilamur@shk1ns-!';
   };
-  
-  // Загрузка данных из базы данных
-  const loadData = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      // Загружаем обычные розыгрыши
-      const giveawaysData = await giveawayAPI.getAll();
-      // Преобразуем данные из БД в формат приложения
-      const formattedGiveaways = giveawaysData.map(g => ({
-        id: g.id,
-        title: g.title,
-        description: g.description,
-        socialNetwork: g.social_network,
-        socialLink: g.social_link,
-        endDate: g.end_date,
-        participants: g.participants_count,
-        participantIds: [], // Будем получать отдельно при необходимости
-        isActive: g.is_active,
-        category: g.category
-      }));
-      setGiveaways(formattedGiveaways);
-      // Загружаем премиум розыгрыш
-      const premiumData = await premiumAPI.get();
-      setPremiumGiveaway({
-        id: 'premium',
-        title: premiumData.title,
-        description: premiumData.description,
-        socialNetwork: premiumData.social_network,
-        socialLink: premiumData.social_link,
-        endDate: premiumData.end_date,
-        participants: premiumData.participants_count,
-        participantIds: [], // Будем получать отдельно при необходимости
-        isActive: premiumData.is_active,
-        category: 'Премиум'
-      });
-    } catch (err) {
-      console.error('Ошибка загрузки данных:', err);
-      setError('Ошибка подключения к базе данных');
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  // Загрузка данных при монтировании компонента
-  useEffect(() => {
-    loadData();
-  }, []);
-  
+
   // Функции для модальных окон
   const showModal = (type, title, message, onConfirm = null, onCancel = null) => {
     setModal({
@@ -185,7 +290,7 @@ const GiveawayApp = () => {
       onCancel
     });
   };
-  
+
   const hideModal = () => {
     setModal({
       show: false,
@@ -196,15 +301,16 @@ const GiveawayApp = () => {
       onCancel: null
     });
   };
-  
+
   // Обработка единого входа
   const handleLogin = () => {
     if (!loginForm.nickname.trim() || !loginForm.password.trim()) {
       showModal('error', 'Ошибка входа', 'Введите никнейм и пароль');
       return;
     }
+
     // Проверяем, это администратор?
-    const decodedAdminNickname = decodeNickname(encryptedAdminData.nickname);
+    const decodedAdminNickname = decodeNickname('dGhnaW5kb29H');
     if (loginForm.nickname === decodedAdminNickname && checkPassword(loginForm.password)) {
       setIsAuthenticated(true);
       setCurrentView('admin');
@@ -212,6 +318,7 @@ const GiveawayApp = () => {
       showModal('success', 'Успешный вход', 'Добро пожаловать в админ-панель!');
       return;
     }
+
     // Проверяем существующий профиль пользователя
     const userKey = loginForm.nickname.trim().toLowerCase();
     const existingProfile = userProfiles[userKey];
@@ -233,18 +340,15 @@ const GiveawayApp = () => {
         createdAt: new Date().toISOString(),
         participations: []
       };
-      // Сохраняем профиль в общем хранилище
-      setUserProfiles(prev => ({
-        ...prev,
-        [userKey]: newUser
-      }));
+
       setLocalUser(newUser);
+      saveUserProfile(newUser);
       setCurrentView('public');
       setLoginForm({ nickname: '', password: '' });
       showModal('success', 'Добро пожаловать!', `Профиль ${newUser.nickname} успешно создан!`);
     }
   };
-  
+
   // Выход из локального аккаунта
   const handleLocalLogout = () => {
     showModal(
@@ -252,13 +356,8 @@ const GiveawayApp = () => {
       'Подтвердите действие',
       'Выйти из аккаунта? Данные профиля сохранятся на устройстве.',
       () => {
-        // Сохраняем обновленный профиль перед выходом
         if (localUser) {
-          const userKey = localUser.nickname.toLowerCase();
-          setUserProfiles(prev => ({
-            ...prev,
-            [userKey]: localUser
-          }));
+          saveUserProfile(localUser);
         }
         setLocalUser(null);
         setCurrentView('public');
@@ -268,15 +367,14 @@ const GiveawayApp = () => {
       hideModal
     );
   };
-  
+
   const handleLogout = () => {
     setIsAuthenticated(false);
     setCurrentView('public');
   };
-  
-  const handleParticipate = async (id) => {
-    // Проверяем авторизацию (локальный пользователь или Hatch пользователь)
-    const currentUser = localUser || user;
+
+  const handleParticipate = (id) => {
+    const currentUser = localUser;
     if (!currentUser || !currentUser.id) {
       showModal(
         'error',
@@ -289,170 +387,113 @@ const GiveawayApp = () => {
       );
       return;
     }
-    try {
-      if (id === 'premium') {
-        // Проверяем, участвует ли пользователь уже
-        const alreadyParticipating = await participantAPI.checkParticipation(currentUser.id, null, true);
-        if (alreadyParticipating) {
-          showModal('error', 'Уже участвуете', 'Вы уже участвуете в этом розыгрыше!');
-          return;
-        }
-        // Добавляем участника в БД
-        await participantAPI.addToPremium(currentUser.id, currentUser.name || currentUser.nickname);
-        // Увеличиваем счетчик
-        await premiumAPI.incrementParticipants();
-        // Обновляем локальное состояние
-        setPremiumGiveaway(prev => ({ 
-          ...prev, 
-          participants: prev.participants + 1
-        }));
-        // Сохраняем участие в локальном профиле
-        if (localUser) {
-          const updatedUser = {
-            ...localUser,
-            participations: [...(localUser.participations || []), {
-              giveawayId: 'premium',
-              giveawayTitle: premiumGiveaway.title,
-              date: new Date().toISOString()
-            }]
-          };
-          setLocalUser(updatedUser);
-          // Обновляем в общем хранилище профилей
-          const userKey = localUser.nickname.toLowerCase();
-          setUserProfiles(prev => ({
-            ...prev,
-            [userKey]: updatedUser
-          }));
-        }
-        showModal('success', 'Участие подтверждено!', 'Вы участвуете в премиум розыгрыше! Удачи!');
-        if (premiumGiveaway.socialLink) {
-          window.open(premiumGiveaway.socialLink, '_blank');
-        }
-      } else {
-        const giveaway = giveaways.find(g => g.id === id);
-        if (!giveaway) return;
-        // Проверяем, участвует ли пользователь уже
-        const alreadyParticipating = await participantAPI.checkParticipation(currentUser.id, id, false);
-        if (alreadyParticipating) {
-          showModal('error', 'Уже участвуете', 'Вы уже участвуете в этом розыгрыше!');
-          return;
-        }
-        // Добавляем участника в БД
-        await participantAPI.addToGiveaway(currentUser.id, currentUser.name || currentUser.nickname, id);
-        // Увеличиваем счетчик
-        await giveawayAPI.incrementParticipants(id);
-        // Обновляем локальное состояние
-        setGiveaways(prev => prev.map(g => 
-          g.id === id ? { 
-            ...g, 
-            participants: g.participants + 1
-          } : g
-        ));
-        // Сохраняем участие в локальном профиле
-        if (localUser) {
-          const updatedUser = {
-            ...localUser,
-            participations: [...(localUser.participations || []), {
-              giveawayId: id,
-              giveawayTitle: giveaway.title,
-              date: new Date().toISOString()
-            }]
-          };
-          setLocalUser(updatedUser);
-          // Обновляем в общем хранилище профилей
-          const userKey = localUser.nickname.toLowerCase();
-          setUserProfiles(prev => ({
-            ...prev,
-            [userKey]: updatedUser
-          }));
-        }
-        showModal('success', 'Участие подтверждено!', `Вы участвуете в розыгрыше "${giveaway.title}"! Удачи!`);
-        if (giveaway.socialLink) {
-          window.open(giveaway.socialLink, '_blank');
-        }
+
+    if (id === 'premium') {
+      if (premiumGiveaway.participantIds.includes(currentUser.id)) {
+        showModal('error', 'Уже участвуете', 'Вы уже участвуете в этом розыгрыше!');
+        return;
       }
-    } catch (err) {
-      console.error('Ошибка участия:', err);
-      showModal('error', 'Ошибка', err.message || 'Не удалось записать на участие');
-    }
-  };
-  
-  const handleCreateGiveaway = async () => {
-    try {
-      if (formData.category === 'Премиум') {
-        // Переносим текущий премиум розыгрыш в обычные, если он активен
-        if (premiumGiveaway.isActive) {
-          const currentPremiumData = {
-            title: premiumGiveaway.title,
-            description: premiumGiveaway.description,
-            socialNetwork: premiumGiveaway.socialNetwork,
-            socialLink: premiumGiveaway.socialLink,
-            endDate: premiumGiveaway.endDate,
-            isActive: premiumGiveaway.isActive,
-            category: 'Обычный'
-          };
-          const createdGiveaway = await giveawayAPI.create(currentPremiumData);
-          // Обновляем локальное состояние
-          const formattedGiveaway = {
-            id: createdGiveaway.id,
-            title: createdGiveaway.title,
-            description: createdGiveaway.description,
-            socialNetwork: createdGiveaway.social_network,
-            socialLink: createdGiveaway.social_link,
-            endDate: createdGiveaway.end_date,
-            participants: createdGiveaway.participants_count,
-            participantIds: [],
-            isActive: createdGiveaway.is_active,
-            category: createdGiveaway.category
-          };
-          setGiveaways(prev => [...prev, formattedGiveaway]);
-        }
-        // Обновляем премиум розыгрыш в БД
-        await premiumAPI.update(formData);
-        // Обновляем локальное состояние
-        setPremiumGiveaway({
-          ...formData,
-          id: 'premium',
-          participants: 0,
-          participantIds: []
-        });
-        showModal('success', 'Премиум розыгрыш создан!', 'Премиум розыгрыш успешно создан и сохранен');
-      } else {
-        // Создаем обычный розыгрыш
-        const createdGiveaway = await giveawayAPI.create(formData);
-        // Обновляем локальное состояние
-        const formattedGiveaway = {
-          id: createdGiveaway.id,
-          title: createdGiveaway.title,
-          description: createdGiveaway.description,
-          socialNetwork: createdGiveaway.social_network,
-          socialLink: createdGiveaway.social_link,
-          endDate: createdGiveaway.end_date,
-          participants: createdGiveaway.participants_count,
-          participantIds: [],
-          isActive: createdGiveaway.is_active,
-          category: createdGiveaway.category
+
+      const updatedPremium = {
+        ...premiumGiveaway,
+        participants: premiumGiveaway.participants + 1,
+        participantIds: [...premiumGiveaway.participantIds, currentUser.id]
+      };
+      setPremiumGiveaway(updatedPremium);
+
+      if (localUser) {
+        const updatedUser = {
+          ...localUser,
+          participations: [...(localUser.participations || []), {
+            giveawayId: 'premium',
+            giveawayTitle: premiumGiveaway.title,
+            date: new Date().toISOString()
+          }]
         };
-        setGiveaways(prev => [...prev, formattedGiveaway]);
-        showModal('success', 'Розыгрыш создан!', 'Розыгрыш успешно создан и сохранен в базе данных');
+        setLocalUser(updatedUser);
+        saveUserProfile(updatedUser);
       }
-      resetForm();
-    } catch (err) {
-      console.error('Ошибка создания розыгрыша:', err);
-      showModal('error', 'Ошибка', 'Не удалось создать розыгрыш. Попробуйте еще раз.');
+
+      showModal('success', 'Участие подтверждено!', 'Вы участвуете в премиум розыгрыше! Удачи!');
+      if (premiumGiveaway.socialLink) {
+        window.open(premiumGiveaway.socialLink, '_blank');
+      }
+    } else {
+      const giveaway = giveaways.find(g => g.id === id);
+      if (giveaway && giveaway.participantIds.includes(currentUser.id)) {
+        showModal('error', 'Уже участвуете', 'Вы уже участвуете в этом розыгрыше!');
+        return;
+      }
+
+      const updatedGiveaways = giveaways.map(g =>
+        g.id === id ? {
+          ...g,
+          participants: g.participants + 1,
+          participantIds: [...g.participantIds, currentUser.id]
+        } : g
+      );
+      setGiveaways(updatedGiveaways);
+      updateGiveaway(updatedGiveaways.find(g => g.id === id));
+
+      if (localUser) {
+        const updatedUser = {
+          ...localUser,
+          participations: [...(localUser.participations || []), {
+            giveawayId: id,
+            giveawayTitle: giveaway.title,
+            date: new Date().toISOString()
+          }]
+        };
+        setLocalUser(updatedUser);
+        saveUserProfile(updatedUser);
+      }
+
+      showModal('success', 'Участие подтверждено!', `Вы участвуете в розыгрыше "${giveaway.title}"! Удачи!`);
+      if (giveaway && giveaway.socialLink) {
+        window.open(giveaway.socialLink, '_blank');
+      }
     }
   };
-  
+
+  const handleCreateGiveaway = () => {
+    if (formData.category === 'Премиум') {
+      if (premiumGiveaway.isActive) {
+        const currentPremium = {
+          ...premiumGiveaway,
+          id: Date.now().toString(),
+          category: 'Обычный'
+        };
+        saveGiveaway(currentPremium);
+      }
+
+      setPremiumGiveaway({
+        ...formData,
+        id: 'premium',
+        participants: 0,
+        participantIds: []
+      });
+    } else {
+      const newGiveaway = {
+        ...formData,
+        id: Date.now().toString(),
+        participants: 0,
+        participantIds: []
+      };
+      saveGiveaway(newGiveaway);
+    }
+
+    resetForm();
+  };
+
   const handleUpdateGiveaway = () => {
     if (formData.category === 'Премиум') {
-      // Переносим текущий премиум розыгрыш в обычные
       const currentPremium = {
         ...premiumGiveaway,
-        id: Date.now(),
+        id: Date.now().toString(),
         category: 'Обычный'
       };
-      setGiveaways(prev => [...prev.filter(g => g.id !== editingGiveaway.id), currentPremium]);
-      // Устанавливаем обновленный розыгрыш как премиум
+      saveGiveaway(currentPremium);
+
       setPremiumGiveaway({
         ...editingGiveaway,
         ...formData,
@@ -461,37 +502,42 @@ const GiveawayApp = () => {
         participantIds: editingGiveaway.participantIds || []
       });
     } else {
-      setGiveaways(prev => prev.map(g => 
-        g.id === editingGiveaway.id ? { ...editingGiveaway, ...formData } : g
-      ));
+      const updatedGiveaway = { ...editingGiveaway, ...formData };
+      updateGiveaway(updatedGiveaway);
     }
     resetForm();
   };
-  
+
   const handleDeleteGiveaway = (id) => {
     const giveaway = giveaways.find(g => g.id === id);
     showModal(
       'confirm',
       'Подтверждение удаления',
       `Удалить розыгрыш "${giveaway?.title}"? Это действие нельзя отменить.`,
-      async () => {
-        try {
-          // Удаляем из базы данных
-          await giveawayAPI.delete(id);
-          // Обновляем локальное состояние
-          setGiveaways(prev => prev.filter(g => g.id !== id));
-          hideModal();
-          showModal('success', 'Розыгрыш удален', 'Розыгрыш успешно удален из базы данных');
-        } catch (err) {
-          console.error('Ошибка удаления розыгрыша:', err);
-          hideModal();
-          showModal('error', 'Ошибка', 'Не удалось удалить розыгрыш. Попробуйте еще раз.');
-        }
+      () => {
+        deleteGiveaway(id);
+        hideModal();
+        showModal('success', 'Розыгрыш удален', 'Розыгрыш успешно удален из системы');
       },
       hideModal
     );
   };
-  
+
+  const clearDemoGiveaways = () => {
+    showModal(
+      'confirm',
+      'Удалить демо-розыгрыши',
+      'Удалить все демонстрационные розыгрыши? Останутся только ваши реальные розыгрыши.',
+      () => {
+        const demoIds = giveaways.filter(g => g.isDemo).map(g => g.id);
+        demoIds.forEach(id => deleteGiveaway(id));
+        hideModal();
+        showModal('success', 'Демо удалены', 'Все демонстрационные розыгрыши удалены');
+      },
+      hideModal
+    );
+  };
+
   const startEdit = (giveaway) => {
     setEditingGiveaway(giveaway);
     setFormData({
@@ -504,7 +550,7 @@ const GiveawayApp = () => {
       category: giveaway.category
     });
   };
-  
+
   const resetForm = () => {
     setFormData({
       title: '',
@@ -517,27 +563,23 @@ const GiveawayApp = () => {
     });
     setEditingGiveaway(null);
   };
-  
+
   const formatDate = (dateString) => {
     return new Date(dateString).toLocaleDateString('ru-RU');
   };
-  
+
   // Компонент модального окна
   const Modal = () => {
     if (!modal.show) return null;
     const getModalIcon = () => {
       switch (modal.type) {
-        case 'success':
-          return '✅';
-        case 'error':
-          return '❌';
-        case 'confirm':
-          return '❓';
-        default:
-          return 'ℹ️';
+        case 'success': return '✅';
+        case 'error': return '❌';
+        case 'confirm': return '❓';
+        default: return 'ℹ️';
       }
     };
-    
+
     const getModalColors = () => {
       switch (modal.type) {
         case 'success':
@@ -566,9 +608,8 @@ const GiveawayApp = () => {
           };
       }
     };
-    
+
     const colors = getModalColors();
-    
     return (
       <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
         <div className={'bg-gradient-to-b from-slate-800/90 to-slate-900/90 backdrop-blur-xl border ' + colors.border + ' rounded-2xl p-6 w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200'}>
@@ -608,43 +649,7 @@ const GiveawayApp = () => {
       </div>
     );
   };
-  
-  // Экран загрузки
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-slate-900 to-black flex items-center justify-center">
-        <div className="text-center">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-r from-orange-500 to-amber-500 rounded-full mb-4 animate-spin">
-            <span className="text-2xl font-bold text-white">⟳</span>
-          </div>
-          <h2 className="text-xl font-bold text-white mb-2">Загрузка WinGather</h2>
-          <p className="text-slate-400">Подключение к базе данных...</p>
-        </div>
-      </div>
-    );
-  }
-  
-  // Экран ошибки
-  if (error) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-slate-900 to-black flex items-center justify-center">
-        <div className="text-center">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-r from-red-500 to-red-600 rounded-full mb-4">
-            <span className="text-2xl font-bold text-white">⚠</span>
-          </div>
-          <h2 className="text-xl font-bold text-white mb-2">Ошибка подключения</h2>
-          <p className="text-slate-400 mb-4">{error}</p>
-          <button
-            onClick={loadData}
-            className="bg-gradient-to-r from-orange-500 to-amber-500 text-white px-6 py-3 rounded-xl hover:from-orange-600 hover:to-amber-600 transition-all duration-200 font-medium shadow-lg"
-          >
-            Попробовать снова
-          </button>
-        </div>
-      </div>
-    );
-  }
-  
+
   if (currentView === 'public') {
     return (
       <>
@@ -653,12 +658,12 @@ const GiveawayApp = () => {
           <div className="absolute inset-0 bg-gradient-to-r from-orange-500/5 to-amber-500/10 pointer-events-none"></div>
           <div className="max-w-6xl mx-auto relative z-10">
             <header className="text-center mb-4">
-              <h1 className="text-4xl md:text-5xl font-bold bg-gradient-to-r from-white to-blue-100 bg-clip-text text-transparent mb-1" style={{fontFamily: 'Russo One, sans-serif'}}>
+              <h1 className="text-4xl md:text-5xl font-bold bg-gradient-to-r from-white to-blue-100 bg-clip-text text-transparent mb-1" style={{ fontFamily: 'Russo One, sans-serif' }}>
                 WinGather
               </h1>
               <p className="text-blue-200 text-base md:text-lg mb-2">Участвуй и выигрывай!</p>
             </header>
-            {/* Закреплённая ячейка на всю ширину - показываем только если премиум активен */}
+
             {premiumGiveaway.isActive && (
               <div className="mb-2 md:mb-3">
                 <div className="bg-gradient-to-b from-slate-800/50 to-slate-900/50 backdrop-blur-sm border-2 border-purple-500 rounded-lg overflow-hidden hover:border-purple-400 transition-all duration-300 group hover:scale-[1.01] hover:shadow-xl hover:shadow-purple-500/10 relative">
@@ -688,13 +693,17 @@ const GiveawayApp = () => {
                 </div>
               </div>
             )}
-            {/* Все розыгрыши в едином порядке */}
+
             <div className="grid grid-cols-2 gap-3 md:gap-4">
               {giveaways
                 .filter(g => g.isActive)
                 .sort((a, b) => {
                   const categoryOrder = { 'VIP': 1, 'Обычный': 2 };
-                  return categoryOrder[a.category] - categoryOrder[b.category];
+                  const categoryDiff = categoryOrder[a.category] - categoryOrder[b.category];
+                  if (categoryDiff !== 0) {
+                    return categoryDiff;
+                  }
+                  return b.id - a.id;
                 })
                 .map(giveaway => {
                   const isVIP = giveaway.category === 'VIP';
@@ -708,8 +717,8 @@ const GiveawayApp = () => {
                       {isVIP && (
                         <span className={`absolute top-2 left-2 text-xs px-2 py-1 rounded-full border z-10 ${badgeColor}`}>VIP</span>
                       )}
-                      <div className="p-3 md:p-4 flex flex-col h-full">
-                        <div className="text-center mb-3 mt-8 flex-1">
+                      <div className="p-3 md:p-4 flex flex-col h-full min-h-[200px]">
+                        <div className="text-center mb-3 mt-6 flex-grow">
                           <h3 className={`text-sm md:text-base font-bold text-white mb-2 ${hoverTextColor} transition-colors`}>{giveaway.title}</h3>
                           <p className="text-slate-300 leading-relaxed text-xs md:text-sm line-clamp-2">{giveaway.description}</p>
                         </div>
@@ -740,7 +749,7 @@ const GiveawayApp = () => {
               </div>
             )}
           </div>
-          {/* Закрепленный подвал */}
+
           <footer className="fixed bottom-0 left-0 right-0 bg-gradient-to-t from-slate-900/95 to-slate-800/95 backdrop-blur-sm border-t border-slate-700/30 px-4 py-3 z-50">
             <div className="max-w-6xl mx-auto flex justify-center items-center gap-4">
               {isAuthenticated ? (
@@ -802,7 +811,7 @@ const GiveawayApp = () => {
       </>
     );
   }
-  
+
   if (currentView === 'login') {
     return (
       <>
@@ -858,7 +867,7 @@ const GiveawayApp = () => {
       </>
     );
   }
-  
+
   if (currentView === 'userProfile' && localUser) {
     return (
       <>
@@ -920,7 +929,7 @@ const GiveawayApp = () => {
               </button>
               <button
                 onClick={handleLocalLogout}
-                className="w-full text-red-400 py-3 hover:text-red-300 transition-colors border border-red-500/30 hover:border-red-400/50 px-3 py-1 rounded-full"
+                className="w-full text-red-400 py-3 hover:text-red-300 transition-colors border border-red-500/30 rounded-xl hover:border-red-400/50"
               >
                 Выйти из профиля
               </button>
@@ -930,7 +939,7 @@ const GiveawayApp = () => {
       </>
     );
   }
-  
+
   if (currentView === 'admin' && isAuthenticated) {
     return (
       <>
@@ -964,7 +973,6 @@ const GiveawayApp = () => {
               </div>
             </header>
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6 lg:gap-8">
-              {/* Форма создания/редактирования */}
               <div className="lg:col-span-1">
                 <div className="bg-gradient-to-b from-slate-800/50 to-slate-900/50 backdrop-blur-sm border border-slate-700/50 rounded-2xl p-4 md:p-6">
                   <h2 className="text-lg md:text-xl font-bold text-white mb-4 md:mb-6 flex items-center">
@@ -1044,7 +1052,6 @@ const GiveawayApp = () => {
                   </div>
                 </div>
               </div>
-              {/* Список розыгрышей */}
               <div className="lg:col-span-2">
                 <div className="bg-gradient-to-b from-slate-800/50 to-slate-900/50 backdrop-blur-sm border border-slate-700/50 rounded-2xl overflow-hidden h-[600px] flex flex-col">
                   <div className="p-4 border-b border-slate-700/50 flex-shrink-0">
@@ -1053,11 +1060,18 @@ const GiveawayApp = () => {
                         <span className="w-2 h-2 bg-blue-500 rounded-full mr-3"></span>
                         Все розыгрыши ({giveaways.length + 1})
                       </h2>
+                      {giveaways.some(g => g.isDemo) && (
+                        <button
+                          onClick={clearDemoGiveaways}
+                          className="text-xs bg-gradient-to-r from-red-600 to-red-700 text-white px-3 py-1 rounded-lg hover:from-red-700 hover:to-red-800 transition-all duration-200"
+                        >
+                          Очистить демо
+                        </button>
+                      )}
                     </div>
                   </div>
                   <div className="flex-1 overflow-y-auto">
                     <div className="divide-y divide-slate-700/50">
-                      {/* Премиум розыгрыш в админ панели */}
                       <div className="p-3 hover:bg-slate-800/30 transition-colors border-l-4 border-purple-500">
                         <div className="flex items-center justify-between gap-3">
                           <div className="flex-1 min-w-0">
@@ -1153,7 +1167,7 @@ const GiveawayApp = () => {
                                 onClick={() => handleDeleteGiveaway(giveaway.id)}
                                 className="bg-gradient-to-r from-red-600 to-red-700 text-white px-2 py-1 rounded-lg text-xs hover:from-red-700 hover:to-red-800 transition-all duration-200"
                               >
-                                Удалить
+                                {giveaway.isDemo ? 'Удалить ДЕМО' : 'Уд.'}
                               </button>
                             </div>
                           </div>
@@ -1162,7 +1176,7 @@ const GiveawayApp = () => {
                     </div>
                     {giveaways.length === 0 && (
                       <div className="p-6 text-center">
-                        <p className="text-slate-400 text-sm">Розыгрышей пока нет.</p>
+                        <p className="text-slate-400 text-sm">Обычных розыгрышей пока нет.</p>
                       </div>
                     )}
                   </div>
@@ -1174,7 +1188,7 @@ const GiveawayApp = () => {
       </>
     );
   }
-  
+
   return (
     <div className="flex items-center justify-center min-h-screen">
       <div className="text-center text-white">
@@ -1191,13 +1205,5 @@ const GiveawayApp = () => {
   );
 };
 
-function App() {
-  return (
-    <div className="App">
-      <GiveawayApp />
-    </div>
-  );
-}
-
-export default App;
+export default GiveawayApp;
 ```
