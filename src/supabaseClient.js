@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 
-// Новая тестовая база данных
+// Тестовая база данных
 const supabaseUrl = 'https://mkcwndpvifvckcxaajju.supabase.co';
 const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1rY3duZHB2aWZ2Y2tjeGFhamp1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ4NTc0NTAsImV4cCI6MjA3MDQzMzQ1MH0.mJY2hkKh-WDJTyEBaiW63MrbKfjOf3Ki8vI-KRa0sfM';
 
@@ -31,6 +31,11 @@ export const giveawayAPI = {
   // Создать новый розыгрыш
   async create(giveawayData) {
     try {
+      // Проверка обязательных полей
+      if (!giveawayData.title || !giveawayData.endDate) {
+        throw new Error('Название и дата окончания обязательны');
+      }
+
       const { data, error } = await supabase
         .from('giveaways')
         .insert([{
@@ -60,6 +65,17 @@ export const giveawayAPI = {
   // Обновить розыгрыш
   async update(id, updates) {
     try {
+      // Проверка существования розыгрыша
+      const { data: existing, error: fetchError } = await supabase
+        .from('giveaways')
+        .select('id')
+        .eq('id', id)
+        .single();
+      
+      if (fetchError || !existing) {
+        throw new Error('Розыгрыш не найден');
+      }
+
       const { data, error } = await supabase
         .from('giveaways')
         .update({
@@ -89,6 +105,17 @@ export const giveawayAPI = {
   // Удалить розыгрыш
   async delete(id) {
     try {
+      // Проверка существования розыгрыша
+      const { data: existing, error: fetchError } = await supabase
+        .from('giveaways')
+        .select('id')
+        .eq('id', id)
+        .single();
+      
+      if (fetchError || !existing) {
+        throw new Error('Розыгрыш не найден');
+      }
+
       const { error } = await supabase
         .from('giveaways')
         .delete()
@@ -108,6 +135,17 @@ export const giveawayAPI = {
   // Увеличить счетчик участников
   async incrementParticipants(id) {
     try {
+      // Проверка существования розыгрыша
+      const { data: existing, error: fetchError } = await supabase
+        .from('giveaways')
+        .select('id')
+        .eq('id', id)
+        .single();
+      
+      if (fetchError || !existing) {
+        throw new Error('Розыгрыш не найден');
+      }
+
       const { data, error } = await supabase
         .rpc('increment_participants', { giveaway_id: id });
       
@@ -146,69 +184,76 @@ export const premiumAPI = {
       console.error('Ошибка получения премиум розыгрыша:', err);
       // Возвращаем дефолтные данные в случае ошибки
       return {
+        id: 1,
         title: 'Создайте премиум розыгрыш',
         description: 'Здесь будет отображаться ваш премиум розыгрыш',
         social_network: 'Telegram',
         social_link: '',
-        end_date: '2025-12-31',
+        end_date: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0],
         participants_count: 0,
         is_active: false
       };
     }
   },
 
-  // Создать дефолтный премиум розыгрыш
-  async create() {
+  // Создать/обновить премиум розыгрыш
+  async create(updates) {
     try {
-      const { data, error } = await supabase
-        .from('premium_giveaway')
-        .insert([{
-          title: 'Создайте премиум розыгрыш',
-          description: 'Здесь будет отображаться ваш премиум розыгрыш',
-          social_network: 'Telegram',
-          social_link: '',
-          end_date: '2025-12-31',
-          participants_count: 0,
-          is_active: false
-        }])
-        .select()
-        .single();
-      
-      if (error) {
-        throw new Error(`Ошибка создания премиум розыгрыша: ${error.message}`);
+      // Проверка обязательных полей
+      if (!updates?.title || !updates?.endDate) {
+        throw new Error('Название и дата окончания обязательны');
       }
-      
-      return data;
-    } catch (err) {
-      console.error('Ошибка создания дефолтного премиум розыгрыша:', err);
-      throw err;
-    }
-  },
 
-  // Обновить премиум розыгрыш
-  async update(updates) {
-    try {
-      const { data, error } = await supabase
+      // Сначала пытаемся получить существующий премиум розыгрыш
+      const { data: existing, error: fetchError } = await supabase
         .from('premium_giveaway')
-        .update({
-          title: updates.title,
-          description: updates.description,
-          social_network: updates.socialNetwork,
-          social_link: updates.socialLink,
-          end_date: updates.endDate,
-          is_active: updates.isActive,
-          participants_count: 0 // Сбрасываем счетчик при обновлении
-        })
-        .select()
+        .select('*')
         .single();
+
+      let result;
       
-      if (error) {
-        throw new Error(`Ошибка обновления премиум розыгрыша: ${error.message}`);
+      if (fetchError || !existing) {
+        // Создаем новый, если не существует
+        const { data, error } = await supabase
+          .from('premium_giveaway')
+          .insert([{
+            title: updates.title,
+            description: updates.description,
+            social_network: updates.socialNetwork,
+            social_link: updates.socialLink,
+            end_date: updates.endDate,
+            is_active: updates.isActive,
+            participants_count: 0
+          }])
+          .select()
+          .single();
+        
+        if (error) throw new Error(`Ошибка создания премиум розыгрыша: ${error.message}`);
+        result = data;
+      } else {
+        // Обновляем существующий
+        const { data, error } = await supabase
+          .from('premium_giveaway')
+          .update({
+            title: updates.title,
+            description: updates.description,
+            social_network: updates.socialNetwork,
+            social_link: updates.socialLink,
+            end_date: updates.endDate,
+            is_active: updates.isActive,
+            participants_count: 0 // Сбрасываем счетчик при обновлении
+          })
+          .eq('id', 1)
+          .select()
+          .single();
+        
+        if (error) throw new Error(`Ошибка обновления премиум розыгрыша: ${error.message}`);
+        result = data;
       }
       
-      return data;
+      return result;
     } catch (err) {
-      console.error('Ошибка обновления премиум розыгрыша:', err);
+      console.error('Ошибка создания/обновления премиум розыгрыша:', err);
       throw err;
     }
   },
@@ -236,6 +281,17 @@ export const participantAPI = {
   // Добавить участника в обычный розыгрыш
   async addToGiveaway(userId, userName, giveawayId) {
     try {
+      // Проверка существования розыгрыша
+      const { data: existingGiveaway, error: giveawayError } = await supabase
+        .from('giveaways')
+        .select('id')
+        .eq('id', giveawayId)
+        .single();
+      
+      if (giveawayError || !existingGiveaway) {
+        throw new Error('Розыгрыш не найден');
+      }
+
       const { data, error } = await supabase
         .from('participants')
         .insert([{
@@ -248,6 +304,9 @@ export const participantAPI = {
         .single();
       
       if (error) {
+        if (error.code === '23505') {
+          throw new Error('Пользователь уже участвует в этом розыгрыше');
+        }
         throw new Error(`Ошибка добавления участника: ${error.message}`);
       }
       
@@ -261,6 +320,24 @@ export const participantAPI = {
   // Добавить участника в премиум розыгрыш
   async addToPremium(userId, userName) {
     try {
+      // Проверка существования премиум розыгрыша
+      const { data: existingPremium, error: premiumError } = await supabase
+        .from('premium_giveaway')
+        .select('id')
+        .single();
+      
+      if (premiumError || !existingPremium) {
+        // Если премиум розыгрыша нет, создаем его
+        await premiumAPI.create({
+          title: 'Премиум розыгрыш',
+          description: 'Участие в премиум розыгрыше',
+          socialNetwork: 'Telegram',
+          socialLink: '',
+          endDate: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0],
+          isActive: true
+        });
+      }
+
       const { data, error } = await supabase
         .from('participants')
         .insert([{
@@ -273,6 +350,9 @@ export const participantAPI = {
         .single();
       
       if (error) {
+        if (error.code === '23505') {
+          throw new Error('Пользователь уже участвует в премиум розыгрыше');
+        }
         throw new Error(`Ошибка добавления участника в премиум: ${error.message}`);
       }
       
@@ -339,22 +419,32 @@ export const participantAPI = {
   }
 };
 
-// API для работы с пользователями (если потребуется)
+// API для работы с пользователями
 export const userAPI = {
   // Создать или обновить профиль пользователя
   async upsertProfile(userId, profileData) {
     try {
+      // Проверка обязательных полей
+      if (!profileData.nickname) {
+        throw new Error('Никнейм обязателен');
+      }
+
       const { data, error } = await supabase
         .from('user_profiles')
         .upsert([{
           user_id: userId,
           nickname: profileData.nickname,
           created_at: profileData.createdAt || new Date().toISOString()
-        }])
+        }], {
+          onConflict: 'user_id'
+        })
         .select()
         .single();
       
       if (error) {
+        if (error.code === '23505') {
+          throw new Error('Никнейм уже занят');
+        }
         throw new Error(`Ошибка создания/обновления профиля: ${error.message}`);
       }
       
